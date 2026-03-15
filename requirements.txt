@@ -1,0 +1,3 @@
+chess==1.11.2
+python-chess==1.999
+stockfish==4.0.8
