@@ -21,3 +21,5 @@ ep_model/processed/*
 ep_model/models/*
 !ep_model/models/.gitkeep
 ep_model/raw/*.pgn.zst
+# Local review previews
+.lavish/

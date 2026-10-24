@@ -16,7 +16,8 @@ Minimal project structure for building an EP model from Lichess database exports
 | `scripts/` | `safe_run` — batched Phase B with health checks, cooldowns, resume. |
 | `phase_a/` | Row generation without engine. |
 | `phase_b/` | Stockfish augmentation + FEN cache. |
-| `phase_c/` | Train LightGBM EP model; split by `game_id`. |
+| `phase_c/` | Train LightGBM EP model (split by `game_id`); evaluate vs eval-only baselines. |
+| `phase_d/` | Inference (`EPModel`) + per-move PGN review with HTML report. |
 | `models/`  | Saved `ep_lgbm.txt` + `ep_train_manifest.json` (gitignored except `.gitkeep`). |
 
 ## Setup
@@ -108,8 +109,9 @@ Phase B already **streams** Parquet row groups in small chunks (no full-file RAM
 Requires `rows_with_eval_part*.parquet` from Phase B.
 
 - **Split:** by **`game_id`** (no row leakage across train/val).
-- **Target:** `result_stm` (regression in \([0,1]\)).
-- **Features:** `cp_stm_proxy` / `cp_white_proxy` (mate → pseudo-cp), Elos, ply, side, time fields, clocks, `eval_depth`, categoricals `phase`, `time_class`, `rating_band`, `opening_eco`.
+- **Target:** `result_stm` (expected score in \([0,1]\), draw = 0.5), **cross-entropy** objective so predictions are calibrated probabilities.
+- **Features:** `cp_stm_proxy` / `cp_white_proxy` (mate → pseudo-cp), Elos, ply, side, time fields, side-to-move-relative clocks (`clk_stm_sec`, `clk_opp_sec`, `clk_stm_frac`), categoricals `phase`, `time_class`, `rating_band`, `opening_eco`.
+- **Clock dropout:** `--clock-dropout` (default 0.15) blanks clocks for that fraction of games so the model has a clock-unknown mode for PGNs without `[%clk]`.
 
 ```bash
 python -m ep_model.phase_c.train -v
@@ -121,10 +123,25 @@ python -m ep_model.phase_c.train --sharded-load -v
 **Outputs** (under `ep_model/models/`, local only — gitignored):
 
 - `ep_lgbm.txt` — LightGBM model
-- `ep_train_manifest.json` — features, metrics (MAE, RMSE, Brier-style on clipped preds), val MAE by `rating_band`, policy path
+- `ep_train_manifest.json` — features, metrics (log loss, MAE, RMSE, Brier), val metrics by `rating_band`, policy path
+- `ep_val_game_ids.txt` — held-out games, used by the evaluation below
 
-Pilot metrics on a few thousand rows are **not** representative of full-data quality; use them to verify the pipeline, then scale Phase A/B and retrain.
+### Evaluate vs baselines
 
-## Next
+```bash
+python -m ep_model.phase_c.evaluate -v
+```
 
-Inference API / product wiring (Phase D): load `ep_lgbm.txt`, build the same feature row from FEN + engine eval + context, call `Booster.predict`. See [TRAINING_PLAN.md](TRAINING_PLAN.md).
+Scores the held-out games with the EP model and four baselines: constant, the Lichess win% curve, a logistic fit on eval only, and LightGBM on eval only. Writes `models/ep_eval_report.md` / `.json` (overall, by rating band and time class, a fixed-eval slice across player groups, calibration).
+
+## Phase D — EP move review
+
+```bash
+python -m ep_model.phase_d.review game.pgn --html review.html
+# PGN without Elo headers, faster engine pass:
+python -m ep_model.phase_d.review game.pgn --white-elo 1450 --black-elo 1500 --depth 14
+```
+
+Per move: **EP if best** (mover's expected score had they played Stockfish's best move), **EP after** the move played, **EP loss**, and a label (excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 15%, blunder ≥ 15%). Both EPs are scored on an opponent-to-move row with the same context, so side-to-move bias in the model cancels. The same thresholds on the Lichess curve give an eval-only label for comparison. Training used `engine_policy.json` depth; lower `--depth` is faster but slightly off-distribution.
+
+In code: `EPModel().predict_rows(rows)` takes Phase B-shaped dicts and returns the side to move's expected score.

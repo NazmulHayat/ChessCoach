@@ -27,6 +27,97 @@ def cp_or_mate_proxy(cp: float | int | None, mate: float | int | None) -> float:
     return 0.0
 
 
+def cp_or_mate_proxy_vec(cp: pd.Series, mate: pd.Series) -> np.ndarray:
+    """Vectorized cp_or_mate_proxy over whole columns (same rules, row by row)."""
+    cp_v = pd.to_numeric(cp, errors="coerce").to_numpy(dtype=np.float64)
+    mate_v = pd.to_numeric(mate, errors="coerce").to_numpy(dtype=np.float64)
+    mate_cp = np.where(mate_v > 0, 1.0, -1.0) * (10000.0 - np.abs(mate_v) * 100.0)
+    return np.where(~np.isnan(mate_v), mate_cp, np.where(~np.isnan(cp_v), cp_v, 0.0))
+
+
+FEATURE_NAMES = [
+    "cp_stm_proxy",
+    "cp_white_proxy",
+    "elo_to_move",
+    "elo_opponent",
+    "elo_diff",
+    "ply",
+    "move_number",
+    "side_w",
+    "initial_time_sec",
+    "increment_sec",
+    "clk_stm_sec",
+    "clk_opp_sec",
+    "clk_stm_frac",
+    "phase",
+    "time_class",
+    "rating_band",
+    "opening_eco",
+]
+
+CATEGORICAL_FEATURES = ["phase", "time_class", "rating_band", "opening_eco"]
+
+
+def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Derive model feature columns from Phase B-shaped rows (no filtering, no target needed).
+    Shared by training and inference so both see identical encodings.
+    """
+    out = df.copy()
+
+    out["cp_stm_proxy"] = cp_or_mate_proxy_vec(out["eval_cp_stm"], out["mate_stm"])
+    out["cp_white_proxy"] = cp_or_mate_proxy_vec(out["eval_cp_white"], out["mate_white"])
+
+    white_to_move = (out["side_to_move"] == "w").to_numpy()
+    out["side_w"] = white_to_move.astype(np.int8)
+
+    # Clocks are relative to the side to move. Before a side's first [%clk] comment its clock
+    # is still the initial time; otherwise missing means "unknown" (-1), e.g. PGNs without clocks.
+    init = pd.to_numeric(out["initial_time_sec"], errors="coerce").to_numpy(dtype=np.float64)
+    early = (pd.to_numeric(out["ply"], errors="coerce") <= 2).to_numpy()
+    clk = {}
+    for col in ("clk_white_sec", "clk_black_sec"):
+        v = pd.to_numeric(out[col], errors="coerce").to_numpy(dtype=np.float64)
+        clk[col] = np.where(np.isnan(v) & early, init, v)
+    stm = np.where(white_to_move, clk["clk_white_sec"], clk["clk_black_sec"])
+    opp = np.where(white_to_move, clk["clk_black_sec"], clk["clk_white_sec"])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        frac = np.where(init > 0, stm / init, np.nan)
+    out["clk_stm_sec"] = np.nan_to_num(stm, nan=-1.0)
+    out["clk_opp_sec"] = np.nan_to_num(opp, nan=-1.0)
+    out["clk_stm_frac"] = np.nan_to_num(frac, nan=-1.0)
+
+    for col in ("initial_time_sec", "increment_sec"):
+        out[col] = out[col].fillna(-1).astype(np.int32)
+
+    out["opening_eco"] = out["opening_eco"].fillna("?").astype(str)
+
+    for c in CATEGORICAL_FEATURES:
+        out[c] = out[c].astype("category")
+
+    for c in FEATURE_NAMES:
+        if c not in out.columns:
+            raise KeyError(f"missing column {c}")
+
+    return out
+
+
+def apply_clock_dropout(df: pd.DataFrame, frac: float, seed: int) -> pd.DataFrame:
+    """
+    Blank both clocks for a random `frac` of games so the model learns a clock-unknown mode
+    (Lichess rows almost always have clocks; many other PGNs do not).
+    """
+    if frac <= 0:
+        return df
+    gids = pd.unique(df["game_id"])
+    rng = np.random.RandomState(seed)
+    drop = set(gids[rng.rand(len(gids)) < frac])
+    out = df.copy()
+    m = out["game_id"].isin(drop)
+    out.loc[m, ["clk_white_sec", "clk_black_sec"]] = np.nan
+    return out
+
+
 def load_eval_parquet(paths: list) -> pd.DataFrame:
     frames = [pd.read_parquet(p) for p in paths]
     return pd.concat(frames, ignore_index=True)
@@ -91,61 +182,12 @@ def load_eval_parquet_sharded(
 def build_training_frame(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], str]:
     """
     Returns (Xy_frame with target column 'result_stm', feature_names, target_name).
-    Drops non-feature columns used only for splitting / audit.
+    Drops rows without an engine eval.
     """
-    out = df.copy()
-
-    out["cp_stm_proxy"] = out.apply(
-        lambda r: cp_or_mate_proxy(r["eval_cp_stm"], r["mate_stm"]), axis=1
-    ).astype(np.float64)
-    out["cp_white_proxy"] = out.apply(
-        lambda r: cp_or_mate_proxy(r["eval_cp_white"], r["mate_white"]), axis=1
-    ).astype(np.float64)
-
-    out["side_w"] = (out["side_to_move"] == "w").astype(np.int8)
-
-    for col in ("initial_time_sec", "increment_sec"):
-        out[col] = out[col].fillna(-1).astype(np.int32)
-
-    for col in ("clk_white_sec", "clk_black_sec"):
-        out[col] = out[col].fillna(-1.0).astype(np.float64)
-
-    out["opening_eco"] = out["opening_eco"].fillna("?").astype(str)
-
-    cat_cols = ["phase", "time_class", "rating_band", "opening_eco"]
-    for c in cat_cols:
-        out[c] = out[c].astype("category")
-
-    feature_names = [
-        "cp_stm_proxy",
-        "cp_white_proxy",
-        "elo_to_move",
-        "elo_opponent",
-        "elo_diff",
-        "ply",
-        "move_number",
-        "side_w",
-        "initial_time_sec",
-        "increment_sec",
-        "clk_white_sec",
-        "clk_black_sec",
-        "eval_depth",
-        "phase",
-        "time_class",
-        "rating_band",
-        "opening_eco",
-    ]
-
-    for c in feature_names:
-        if c not in out.columns:
-            raise KeyError(f"missing column {c}")
-
-    out["eval_depth"] = out["eval_depth"].fillna(-1).astype(np.int32)
-
+    out = add_model_features(df)
     mask = out["eval_cp_stm"].notna() | out["mate_stm"].notna()
     out = out.loc[mask].copy()
-
-    return out, feature_names, "result_stm"
+    return out, list(FEATURE_NAMES), "result_stm"
 
 
 def split_by_game_id(
@@ -168,7 +210,10 @@ def metrics_regression(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, floa
     rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
     p = np.clip(y_pred, 0.0, 1.0)
     brier = float(np.mean((y_true - p) ** 2))
-    return {"mae": mae, "rmse": rmse, "brier_clipped": brier}
+    # Cross-entropy with soft labels (draw = 0.5); lower is better.
+    q = np.clip(y_pred, 1e-6, 1.0 - 1e-6)
+    log_loss = float(-np.mean(y_true * np.log(q) + (1.0 - y_true) * np.log(1.0 - q)))
+    return {"mae": mae, "rmse": rmse, "brier_clipped": brier, "log_loss": log_loss}
 
 
 def metrics_by_rating_band(y_true: np.ndarray, y_pred: np.ndarray, bands: pd.Series) -> dict[str, dict[str, float]]:

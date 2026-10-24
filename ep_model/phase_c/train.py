@@ -22,6 +22,8 @@ import numpy as np
 import pandas as pd
 
 from ep_model.phase_c.prepare import (
+    CATEGORICAL_FEATURES,
+    apply_clock_dropout,
     build_training_frame,
     load_eval_parquet,
     load_eval_parquet_sharded,
@@ -33,8 +35,6 @@ from ep_model.phase_c.prepare import (
 )
 
 LOG = logging.getLogger(__name__)
-
-CATEGORICAL_FEATURES = ["phase", "time_class", "rating_band", "opening_eco"]
 
 
 def _repo_root() -> Path:
@@ -54,6 +54,7 @@ def run(
     max_rows: int | None,
     policy_path: Path | None,
     sharded_load: bool = False,
+    clock_dropout: float = 0.15,
 ) -> int:
     if not input_paths:
         LOG.error("No input Parquet files (rows_with_eval_part*.parquet)")
@@ -81,6 +82,7 @@ def run(
             df = df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
             LOG.info("Subsampled to %s rows", max_rows)
 
+    df = apply_clock_dropout(df, clock_dropout, seed)
     df, feature_names, target_col = build_training_frame(df)
     LOG.info("Rows after filter: %s, games: %s", len(df), df["game_id"].nunique())
 
@@ -113,8 +115,11 @@ def run(
     )
 
     params = {
-        "objective": "regression",
-        "metric": "mae",
+        # Target is an expected score in [0, 1] (draw = 0.5): cross-entropy gives calibrated
+        # probabilities, unlike L2/MAE which pull predictions toward 0 / 0.5 / 1.
+        "objective": "cross_entropy",
+        "metric": ["cross_entropy", "l2"],
+        "first_metric_only": True,
         "verbosity": -1,
         "seed": seed,
         "num_leaves": 31,
@@ -145,7 +150,8 @@ def run(
     by_band = metrics_by_rating_band(y_val, pred_val, val_df["rating_band"])
 
     LOG.info(
-        "Val metrics: MAE=%.4f RMSE=%.4f Brier(clipped pred)=%.4f | best_iter=%s | train_time=%.1fs",
+        "Val metrics: LogLoss=%.4f MAE=%.4f RMSE=%.4f Brier(clipped pred)=%.4f | best_iter=%s | train_time=%.1fs",
+        m["log_loss"],
         m["mae"],
         m["rmse"],
         m["brier_clipped"],
@@ -169,6 +175,7 @@ def run(
         "categorical_features": [c for c in CATEGORICAL_FEATURES if c in feature_names],
         "target": target_col,
         "lgbm_params": {k: v for k, v in params.items() if k != "verbosity"},
+        "clock_dropout": clock_dropout,
         "best_iteration": int(booster.best_iteration),
         "val_metrics": m,
         "val_metrics_by_rating_band": by_band,
@@ -176,6 +183,10 @@ def run(
         "input_files": [str(p.name) for p in input_paths],
         "engine_policy_path": str(policy_path) if policy_path and policy_path.is_file() else None,
     }
+    # Held-out games, so evaluate.py scores exactly the rows the model never saw.
+    val_ids_path = out_dir / "ep_val_game_ids.txt"
+    val_ids_path.write_text("\n".join(sorted(map(str, val_df["game_id"].unique()))) + "\n", encoding="utf-8")
+
     manifest_path = out_dir / "ep_train_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -202,6 +213,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Read one Parquet shard at a time (lower peak RAM for large Phase B output)",
     )
     p.add_argument("--policy", type=Path, default=policy, help="Engine policy path for manifest")
+    p.add_argument(
+        "--clock-dropout",
+        type=float,
+        default=0.15,
+        help="Fraction of games trained with clocks blanked (teaches a clock-unknown mode)",
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -219,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         max_rows=args.max_rows,
         policy_path=args.policy,
         sharded_load=args.sharded_load,
+        clock_dropout=args.clock_dropout,
     )
 
 
