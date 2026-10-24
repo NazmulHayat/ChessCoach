@@ -1,0 +1,33 @@
+[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2026.02.13"]
+[Round "-"]
+[White "Nazmul0689"]
+[Black "ja0chess"]
+[Result "1-0"]
+[CurrentPosition "k1r5/p2b2p1/1q2p2p/P2pPp2/3P2P1/2Q1P3/1R1KB1P1/7R b - - 0 28"]
+[Timezone "UTC"]
+[ECO "D02"]
+[ECOUrl "https://www.chess.com/openings/Queens-Pawn-Opening-Zukertort-Variation-2...e6-3.Bf4-c5"]
+[UTCDate "2026.02.13"]
+[UTCTime "01:06:53"]
+[WhiteElo "1486"]
+[BlackElo "1433"]
+[TimeControl "180+2"]
+[Termination "Nazmul0689 won - game abandoned"]
+[StartTime "01:06:53"]
+[EndDate "2026.02.13"]
+[EndTime "01:12:50"]
+[Link "https://www.chess.com/analysis/game/live/164612306060/analysis"]
+[WhiteUrl "https://images.chesscomfiles.com/uploads/v1/user/49044172.7ae7cd4a.50x50o.e4c1c4d9a8d2.jpg"]
+[WhiteCountry "177"]
+[WhiteTitle ""]
+[BlackUrl "https://www.chess.com/bundles/web/images/noavatar_l.84a92436.gif"]
+[BlackCountry "32"]
+[BlackTitle ""]
+
+1. d4 d5 2. Nf3 e6 3. Bf4 c5 4. c3 Nc6 5. e3 Nf6 6. Nbd2 Nh5 7. Bg3 Nxg3 8. hxg3
+Bd7 9. Bd3 Qc7 10. Qc2 O-O-O 11. O-O-O Bd6 12. Ng5 f5 $2 13. Nf7 $1 Rdf8 14. Nxh8
+Rxh8 15. f4 $6 b5 $2 16. Nf3 $9 b4 $2 17. Ne5 $9 Bxe5 $6 18. fxe5 c4 19. Be2 Kb7 $6 20.
+g4 Rb8 21. b3 $2 bxc3 $2 22. Qxc3 cxb3 23. axb3 Ka8 24. Kd2 Qb6 25. Rb1 $6 h6 $2 26.
+Rb2 $9 Na5 $2 27. b4 $6 Rc8 $2 28. bxa5 1-0

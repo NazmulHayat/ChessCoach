@@ -1,0 +1,8 @@
+{
+  "stockfish_path": "stockfish",
+  "depth": 17,
+  "threads": 2,
+  "hash_mb": 128,
+  "multipv": 1,
+  "description": "Cooler / background-friendly EP Phase B: lower Threads and Hash than default. Same depth as engine_policy.json for comparable labels."
+}

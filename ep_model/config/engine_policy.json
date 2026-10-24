@@ -1,0 +1,8 @@
+{
+  "stockfish_path": "stockfish",
+  "depth": 17,
+  "threads": 4,
+  "hash_mb": 256,
+  "multipv": 1,
+  "description": "Fixed policy for EP Phase B; change version/date when you change any field."
+}

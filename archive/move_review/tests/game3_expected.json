@@ -1,0 +1,24 @@
+{
+  "white_accuracy": 78.8,
+  "black_accuracy": 70.0,
+  "white_rating": 1750,
+  "black_rating": 1250,
+  "white": {
+    "Book": 6,
+    "Best": 8,
+    "Excellent": 2,
+    "Good": 4,
+    "Great": 1,
+    "Inaccuracy": 3,
+    "Mistake": 1,
+    "Miss": 3
+  },
+  "black": {
+    "Book": 6,
+    "Best": 5,
+    "Excellent": 3,
+    "Good": 4,
+    "Inaccuracy": 2,
+    "Mistake": 7
+  }
+}

@@ -1,0 +1,16 @@
+# EP model dependencies
+# .pgn.zst reading
+zstandard>=0.22.0
+
+# PGN parsing (if not using project root)
+python-chess>=1.999
+
+# Parquet I/O
+pyarrow>=14.0.0
+pandas>=2.0.0
+
+# Training
+lightgbm>=4.0.0
+
+# safe_run health checks
+psutil>=5.9.0

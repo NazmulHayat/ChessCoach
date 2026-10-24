@@ -1,3 +1,11 @@
-chess==1.11.2
-python-chess==1.999
-stockfish==4.0.8
+# Chess + UCI (shared: EP engine pass, archived move review)
+chess>=1.11
+python-chess>=1.999
+stockfish>=4.0.8
+
+# EP model: .pgn.zst → Parquet → training (see ep_model/TRAINING_PLAN.md)
+zstandard>=0.22.0
+pyarrow>=14.0.0
+pandas>=2.0.0
+lightgbm>=4.0.0
+psutil>=5.9.0

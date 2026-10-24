@@ -1,4 +1,23 @@
+# Single project venv (see README)
+.venv/
 venv/
+venv-ep/
+.venv-ep/
 __pycache__/
 *.pyc
 .env
+.DS_Store
+.pytest_cache/
+
+# Cursor (local only; do not commit rules/config)
+.cursor/
+
+# Lichess DB dumps (large; keep outside git)
+*.pgn.zst
+
+# EP model derived data (parquet, caches, shards)
+ep_model/processed/*
+!ep_model/processed/.gitkeep
+ep_model/models/*
+!ep_model/models/.gitkeep
+ep_model/raw/*.pgn.zst
