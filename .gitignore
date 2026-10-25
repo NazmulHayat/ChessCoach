@@ -27,3 +27,4 @@ ep_model/processed_lichess/
 ep_model/models_lichess/
 ep_model/models_lichess25/
 ep_model/models_finetuned25/
+ep_model/raw/*.csv
