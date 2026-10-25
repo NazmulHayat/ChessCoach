@@ -1,98 +1,88 @@
+// Everything runs in the browser: Stockfish (WebAssembly workers), the EP models and the review logic, so the
+// app is a static site. Same function names as the old server client, so the UI didn't change.
+import { createEnginePool, type EnginePool } from './engine/pool'
+import { fetchGamesDirect } from './importers'
+import { loadBook, type Book } from './review/book'
+import { fetchTreeModel, loadTreeModel } from './review/lgbm'
+import { reviewGame, scoreAttempt, type Models, type ReviewResult } from './review/review'
 import type { GameListItem, RetryResult, Review } from './types'
 
-async function errorDetail(r: Response): Promise<string> {
+export const ENGINE_DEPTH = 17 // the depth the models were trained and checked at
+
+const base = import.meta.env.BASE_URL
+let modelsPromise: Promise<Models> | null = null
+let pool: EnginePool | null = null
+const reviews = new Map<string, ReviewResult>()
+const MAX_REVIEWS = 20
+
+async function fetchBook(): Promise<Book | null> {
   try {
-    const body = await r.json()
-    return typeof body.detail === 'string' ? body.detail : `Request failed (${r.status})`
+    const [bin, keys] = await Promise.all([
+      fetch(`${base}data/book.bin`).then((r) => r.arrayBuffer()),
+      fetch(`${base}data/polyglot.json`).then((r) => r.json() as Promise<string[]>),
+    ])
+    return loadBook(bin, keys)
   } catch {
-    return `Request failed (${r.status})`
+    return null // reviews still work, just without "book" moves
   }
 }
 
-/** Engine depth and worker count if the server is up, else null. */
+function models(): Promise<Models> {
+  modelsPromise ??= Promise.all([
+    fetchTreeModel(`${base}data/models/board.json`),
+    fetchTreeModel(`${base}data/models/chances.json`),
+    fetch(`${base}data/models/rating.json`)
+      .then((r) => r.json())
+      .then((json) => Object.assign(loadTreeModel(json), { inverse: json.inverse, posterior_sd: json.posterior_sd })),
+    fetchBook(),
+  ]).then(([board, chances, rating, book]) => ({ board, chances, rating, book }))
+  modelsPromise.catch(() => (modelsPromise = null))
+  return modelsPromise
+}
+
+function enginePool(): EnginePool {
+  pool ??= createEnginePool({ depth: ENGINE_DEPTH })
+  return pool
+}
+
+export class GoneError extends Error {}
+
+/** Always available now (no server). Explanations need an API key on a server, so they are off here. */
 export async function health(): Promise<{ depth: number; workers: number; explain: boolean } | null> {
-  try {
-    const r = await fetch('/api/health')
-    return r.ok ? r.json() : null
-  } catch {
-    return null
-  }
+  return { depth: ENGINE_DEPTH, workers: Math.min(8, Math.max(1, (navigator.hardwareConcurrency || 2) - 1)), explain: false }
 }
 
-export async function fetchGames(site: 'chesscom' | 'lichess', user: string): Promise<GameListItem[]> {
-  let r: Response
-  try {
-    r = await fetch(`/api/games/${site}/${encodeURIComponent(user.trim())}`)
-  } catch {
-    throw new Error('Can’t reach the ChessCoach server. Is it running?')
-  }
-  if (!r.ok) throw new Error(await errorDetail(r))
-  return r.json()
+export function fetchGames(site: 'chesscom' | 'lichess', user: string): Promise<GameListItem[]> {
+  return fetchGamesDirect(site, user)
 }
 
-/** POST the PGN and read the server-sent event stream: progress events, then one result (or error). */
+/** Review a game in this browser; progress counts analysed positions. */
 export async function streamReview(
   pgn: string,
   onProgress: (done: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<Review> {
-  let r: Response
-  try {
-    r = await fetch('/api/review', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pgn }),
-      signal,
-    })
-  } catch (e) {
-    if (signal?.aborted) throw e
-    throw new Error('Can’t reach the ChessCoach server. Is it running?')
-  }
-  if (!r.ok || !r.body) throw new Error(await errorDetail(r))
-
-  const reader = r.body.pipeThrough(new TextDecoderStream()).getReader()
-  let buf = ''
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buf += value
-    let sep: number
-    while ((sep = buf.indexOf('\n\n')) !== -1) {
-      const block = buf.slice(0, sep)
-      buf = buf.slice(sep + 2)
-      const event = /^event: (.*)$/m.exec(block)?.[1]
-      const data = /^data: (.*)$/m.exec(block)?.[1]
-      if (!event || data === undefined) continue
-      const payload = JSON.parse(data)
-      if (event === 'progress') onProgress(payload.done, payload.total)
-      else if (event === 'result') return payload as Review
-      else if (event === 'error') throw new Error(payload.detail || 'Analysis failed')
-    }
-  }
-  throw new Error('Connection closed before the analysis finished')
+  const m = await models()
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  const result = await reviewGame(pgn, m, enginePool().analyse, { depth: ENGINE_DEPTH, progress: onProgress })
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  const id = crypto.randomUUID()
+  reviews.set(id, result)
+  if (reviews.size > MAX_REVIEWS) reviews.delete(reviews.keys().next().value as string)
+  const review: Review & { rows?: unknown } = { ...result, review_id: id }
+  delete review.rows
+  return review
 }
 
-export class GoneError extends Error {}
-
-/** Score a move tried in retry mode. Throws GoneError if the server no longer has this review. */
+/** Score a move tried in retry mode. Throws GoneError if this review is no longer in memory. */
 export async function retryMove(reviewId: string, ply: number, uci: string): Promise<RetryResult> {
-  const r = await fetch('/api/retry', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ review_id: reviewId, ply, uci }),
-  })
-  if (r.status === 410) throw new GoneError(await errorDetail(r))
-  if (!r.ok) throw new Error(await errorDetail(r))
-  return r.json()
+  const r = reviews.get(reviewId)
+  const move = r?.moves[ply - 1]
+  if (!r || !move) throw new GoneError('This review is no longer in memory.')
+  return scoreAttempt(r, move, uci, (await models()).board, enginePool().analyse)
 }
 
-/** Claude-written note on one move (only when the server has ANTHROPIC_API_KEY). */
-export async function explainMove(reviewId: string, ply: number): Promise<string> {
-  const r = await fetch('/api/explain', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ review_id: reviewId, ply }),
-  })
-  if (!r.ok) throw new Error(await errorDetail(r))
-  return (await r.json()).text
+export async function explainMove(...args: [reviewId: string, ply: number]): Promise<string> {
+  void args
+  throw new Error('Written explanations are not available in the browser version.')
 }

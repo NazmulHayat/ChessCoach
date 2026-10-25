@@ -41,7 +41,7 @@ from ep_model.phase_b.augment_evals import load_policy
 from ep_model.phase_c.evaluate import lichess_expected
 from ep_model.phase_c.prepare import cp_or_mate_proxy
 from ep_model.phase_d.predictor import EPModel, board_model_dir
-from ep_model.phase_d.accuracy import combine, ep_move_weights, move_accuracy_pct
+from ep_model.phase_d.accuracy import combine, move_accuracy_pct, volatility_weights
 from ep_model.phase_d.rating_estimate import estimate_rating, phase_grade, phase_of
 from ep_model.phase_d.ratings import detect_pool, from_lichess_scale, to_lichess_scale
 from ep_model.phase_d.special import (
@@ -385,7 +385,9 @@ def review_game(
                     "lichess_after": li_after,
                     "lichess_loss": li_loss,
                     "lichess_label": "book" if is_book else label_for_loss(li_loss, is_best),
-                    "accuracy": 100.0 if is_book else move_accuracy_pct(100.0 * ep_loss),
+                    # Lichess's formula on our engine's evals: closer to both Lichess's and Chess.com's accuracy than
+                    # the same formula on EP loss, and as good at picking the winner (docs/benchmark.md).
+                    "accuracy": 100.0 if is_book else move_accuracy_pct(100.0 * (li_best - li_after)),
                     "phase": phase,
                     "clock_sec": before["clk_white_sec"] if mover == "white" else before["clk_black_sec"],
                 }
@@ -394,8 +396,8 @@ def review_game(
         if book is not None:
             book.close()
 
-    # Lichess's aggregation (volatility-weighted mean + harmonic mean), on our expected-points losses.
-    weights = ep_move_weights([p["white_ep_judge"] for p in positions])
+    # Lichess's aggregation (volatility-weighted mean + harmonic mean), weights from white's win% on Lichess's curve.
+    weights = volatility_weights([100.0 * (p["lichess_stm"] if p["side_to_move"] == "w" else 1.0 - p["lichess_stm"]) for p in positions])
     for m, w in zip(moves, weights):
         m["weight"] = w
 

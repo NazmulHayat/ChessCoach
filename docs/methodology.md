@@ -127,7 +127,7 @@ Lichess's published method (`ep_model/phase_d/accuracy.py`): per-move accuracy f
 
 **Checked against Lichess itself.** On 381 analysed games from Lichess's public API (762 player scores), our implementation fed with Lichess's own evals gives Lichess's displayed accuracy to within 0.32 points on average and within rounding (Lichess shows whole numbers) on 94%. Reconstructing it surfaced one detail: the harmonic mean floors each move at 1; with a ~0 floor the average difference was 0.57 and one game was off by 15 points.
 
-In the app the same aggregation runs on **expected-points loss** (best move vs move played, so rating and clock count), with weights from the volatility of white's chances. Phase grades use the same aggregation on the phase's moves: ≥ 95 best, ≥ 85 excellent, ≥ 75 good, ≥ 60 inaccuracy, ≥ 45 mistake, else blunder. Phases: **endgame** once at most 6 queens / rooks / bishops / knights remain; **opening** for the first 10 moves or while still in book; **middlegame** otherwise. Chess.com's CAPS formula is not public, so the numbers are not directly comparable to theirs.
+In the app the per-move input is the drop on Lichess's win% curve from our own engine's evals, with weights from the volatility of white's win%. Applying the same formula to expected-points loss was tried first and dropped on the benchmark: 5.6 points from Lichess's accuracy (vs 3.1) and 9.1 from Chess.com's (vs 8.1), and no better at picking the winner of decisive games (0.957 vs 0.960). Chess.com's CAPS formula is private, so an ~8-point gap to it remains. Phase grades use the same aggregation on the phase's moves: ≥ 95 best, ≥ 85 excellent, ≥ 75 good, ≥ 60 inaccuracy, ≥ 45 mistake, else blunder. Phases: **endgame** once at most 6 queens / rooks / bishops / knights remain; **opening** for the first 10 moves or while still in book; **middlegame** otherwise. Chess.com's CAPS formula is not public, so the numbers are not directly comparable to theirs.
 
 **Eval bar and graph** show white's EP averaged over the actual side-to-move view and a mirrored view of the same position, so the curve doesn't zig-zag with whoever is on move.
 
@@ -180,6 +180,12 @@ The 25 unflagged blunders were all played in positions already lost (EP ≤ 12%)
 Our engine pass agrees with Lichess's stronger analysis (eval-only labels: 100% of our blunders are Lichess errors). The EP labels are deliberately gentler: Lichess's blunder cut-off is a 15-point win% drop while Chess.com's bands use 20, and EP discounts moves that don't change a decided game at that rating and clock.
 
 **Repeatability.** The same game reviewed twice kept the same label on only 78.2% of moves (20 games). Cause: each Stockfish process kept its hash and history from whatever it analysed before, so results depended on scheduling. Fixed by clearing the engine (`ucinewgame`) before every position: 100% identical labels on a re-review, for about 5% more time (same 8 games, 4 engines: 22.3 → 23.6 s per game; clearing once per block of 8 positions measured the same, 23.4 s).
+
+## In the browser
+
+The live app runs without a server. `web/src/engine` drives Stockfish 18 lite (WebAssembly, single-threaded) in one Web Worker per core, with the same multipv-2 fields as the Python engine pool. `web/src/review` is a TypeScript port of the review: tree models exported from LightGBM to JSON and evaluated with LightGBM's own split and missing-value rules, the Polyglot book reader, static exchange, tactic hints, accuracy, game rating, and python-chess's draw-claim rules (threefold repetition counts if the next move could claim it). Parity tests replay Python's outputs on the same engine evals: model predictions within 1e-9 on 400 varied rows, every helper on thousands of positions, and 58 full benchmark reviews (Lichess, Chess.com, puzzles, known cases) identical in every label and number.
+
+The lite engine's evals differ from native Stockfish 18's: median 16 cp, 90th percentile 90 cp, same best move 77.5% of the time (200 benchmark positions, depth 17). Reviews in the browser can therefore differ slightly from the benchmark numbers, which are measured with the native engine.
 
 ## Rating pools
 

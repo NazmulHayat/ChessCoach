@@ -2,6 +2,8 @@
 
 **Chess game review that judges moves by your real chances, at your rating, on your clock.**
 
+**Try it: [nazmulhayat.github.io/ChessCoach](https://nazmulhayat.github.io/ChessCoach/)**. It runs entirely in your browser (Stockfish 18 as WebAssembly, the models and the review logic in TypeScript), so it's free, needs no account, and your games never leave your computer.
+
 Stockfish says +1.5 no matter who is playing. ChessCoach asks a different question: *how often does a player at this rating, in this time control, with this much time left, actually score from here?* That number, **expected points (EP)**, drives a Chess.com-style Game Review: every move is labelled by how much it changed the mover's practical chances, not by a fixed centipawn cutoff.
 
 ![Game review screen](docs/images/review.png)
@@ -53,17 +55,18 @@ Where the 12M positions came from: about 1 in 9 games in the Lichess dump was al
 
 ## Quick start
 
-Requirements: Python 3.11+, Node 18+, and [Stockfish](https://stockfishchess.org/) on your `PATH`.
+The app is a static site: `cd web && npm install && npm run dev` (Node 18+), or `npm run build` and host `web/dist` anywhere. GitHub Pages deploys it on every push to `main` (`.github/workflows/pages.yml`).
+
+**How it runs in the browser.** One Stockfish 18 lite WebAssembly worker per CPU core (7 MB; the full 113 MB net is too big to ship), the three LightGBM models exported to JSON (`python -m ep_model.scripts.export_web`, 9.6 MB in total) and read by a small TypeScript tree evaluator, and the review rules ported from Python (`web/src/review`). The port is held to the Python reference: 85 tests replay Python's outputs, including 58 full reviews of benchmark games that must give the same label, numbers and summary for every move. A 61-move bullet game reviews in about 14 s on a laptop. The written Claude explanations need a server with an API key, so the static site leaves them out.
+
+The Python side (training, benchmark, the reference review, and the original FastAPI server) needs Python 3.11+ and [Stockfish](https://stockfishchess.org/) on your `PATH`:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cd web && npm install && npm run build && cd ..
-
-python -m ep_model.phase_d.server          # → http://127.0.0.1:8000
+python -m ep_model.phase_d.server          # optional server version → http://127.0.0.1:8000
+python -m ep_model.benchmark.run score --model shipped=ep_model/models_board
 ```
-
-The trained model ships in `ep_model/models_finetuned/`, so the app works right after cloning; retrain with the steps below. Lighter engine pass: `--depth 12 --workers 2`. Frontend development with hot reload: run the server, then `cd web && npm run dev`.
 
 Command-line review without the UI:
 

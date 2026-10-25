@@ -46,6 +46,8 @@ export interface ReviewMove {
   accuracy: number
   phase: Phase
   clock_sec: number | null
+  cp_before?: number // engine eval before the move, mover's view (cp; mate as ±(10000 - 100·N))
+  weight?: number // volatility weight in the accuracy average
 }
 
 export type Phase = 'opening' | 'middlegame' | 'endgame'

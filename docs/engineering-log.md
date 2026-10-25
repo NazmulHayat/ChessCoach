@@ -16,6 +16,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-10-25 | Pretrain on 25M harvested rows (2× data): not significantly better than the shipped 12M model, so not shipped. |
 | 2026-10-25 | Phase B continuous queue (measured +2%), Dockerfile (Stockfish 18 compiled in), Fly.io / Render configs, request limits. Label frequencies on 200 real games. |
 | 2026-10-25 | Independent validation (Lichess puzzles, Lichess's own move verdicts, repeatability); fixes: Lichess accuracy formula, Chess.com-style performance rating, deterministic engine jobs. |
+| 2026-10-25 | Runs fully in the browser (Stockfish WASM workers, models as JSON, review ported to TypeScript with parity tests); static hosting on GitHub Pages. Accuracy switched to Lichess's formula on our evals, chosen on the benchmark. |
 | 2026-10-25 | User-reported bullet game exposed clock-driven labels. Built a fixed benchmark (Lichess, Chess.com, puzzles, known cases; per time class); split the chances model from a board-only move-judging model chosen on it. "Played like" game rating in the UI. |
 
 ## Key numbers
@@ -47,6 +48,9 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | multipv=2 cost | 0.414 → 0.605 s/position at depth 17 (+46%); top-line eval drift median 7.5 cp, p90 27 cp (120 positions) |
 | Benchmark | 150 Lichess + 300 Chess.com games, 300 puzzles, 64 known cases; Stockfish cached per position, a model scores in ~1 min |
 | Move-judging model vs clock model (benchmark) | Lichess blunders called mistake+ 64.7% → 79.4%; our blunders confirmed by Lichess 95.3% → 100%; error count vs Lichess 0.81 → 1.02; known cases 65.6% → 100% |
+| In-browser review | 61-move bullet game in ~14 s (Chrome, 10-core laptop); Stockfish lite 7 MB, models 9.6 MB JSON; lite vs native evals: median 16 cp, best move same 77.5% |
+| Browser parity | 85 vitest tests: 400 model rows within 1e-9, helper checks on 240 positions / 5,000+ moves, 58 full reviews identical to Python |
+| Accuracy choice (benchmark) | Lichess formula on our evals vs on EP loss: gap to Lichess 3.1 vs 5.6, to Chess.com 8.1 vs 9.1, winner-picking 0.960 vs 0.957 |
 | Tests | 60 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
 
 ## Problems solved
@@ -72,6 +76,11 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 18. **The model judged moves by the clock.** A user's 1+0 bullet game showed 0 blunders and 94% accuracy; Lichess found 2 blunders and 81%. Giving away a queen for a rook cost 2.5% "chances" and was labelled good. Not a data bug (evals line up: mate-in-1 positions score 96%); the clock-aware model was right that 1+0 games are decided by the clock (1.5–4 pawns up with ~24 s each scores 51% in Lichess data). Fix: keep that model for the chances bar, judge moves with a board-only model (no clock features, monotone in eval, rapid / classical games). Same game: accuracy 96.5 / 94.0 → 90.2 / 81.4 vs Lichess's 91 / 81.
 19. **No standard to catch it.** Every earlier check was a one-off script averaged over all time controls, so a bullet-only failure stayed hidden. Built a fixed benchmark with targets, per time class: frozen Lichess games (recent, outside the training month), Chess.com games with Chess.com's accuracy, puzzles, and known cases including traps replayed with either side nearly flagging. Engine results cached per position, so comparing models takes a minute instead of an hour. The old model failed 22 of 64 known cases; the shipped one fails none.
 20. **"Great" for taking a free piece.** The Great rule excluded recaptures but not capturing a hanging piece (Qxg5 after Bg5?? was "Great"). Now any capture of the most material available by static exchange (≥ 2 points) is just Best. Found by the known-case set.
+
+21. **Free hosting meant moving the server into the browser.** A server costs money and stalls under load; Chessigma-style, everything now runs client-side: Stockfish 18 lite WebAssembly in one worker per core, the LightGBM models exported to JSON and evaluated in TypeScript with LightGBM's exact split / missing-value rules, and the review rules ported module by module. Kept honest by parity tests against Python on identical engine evals (58 full reviews identical). The full 113 MB engine exceeds GitHub Pages' 100 MB file limit, so the 7 MB lite net is used; its evals differ by a median 16 cp.
+22. **Two draws that weren't on the board.** The port's first parity run differed on 2 of ~3,000 moves: python-chess counts a position as drawn when a threefold repetition can be *claimed by the next move*, which chess.js doesn't. Ported python-chess's rule (positions since the last irreversible move, transposition keys with legal en passant only).
+23. **Static exchange was 50× too slow in the browser.** chess.js generates SAN for every legal move; sacrifice checks call it thousands of times per game. Using its internal move generator (pinned to chess.js 1.4.0) took the helper test from over 5 minutes to 6 s.
+24. **Accuracy formula chosen on data.** With Chess.com's own accuracy now in the benchmark, Lichess's formula on our engine's evals beat the same formula on EP loss against both Lichess and Chess.com and picked winners as well, so the app switched.
 
 ## Product
 
