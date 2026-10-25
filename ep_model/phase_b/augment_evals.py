@@ -10,12 +10,15 @@ See ep_model/config/engine_policy.json for depth/threads (fixed for reproducibil
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
+import queue
 import re
 import sqlite3
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +155,7 @@ def run(
     flush_rows: int,
     resume: bool,
     summary_json: Path | None = None,
+    workers: int = 1,
 ) -> int:
     policy = load_policy(policy_path)
     stockfish_path = policy.get("stockfish_path", "stockfish")
@@ -185,12 +189,72 @@ def run(
     t0 = time.perf_counter()
 
     limit_reached = False
+    workers = max(1, workers)
+    # Rows are evaluated in chunks so `workers` engines (one per thread) can run in parallel;
+    # cache lookups, cache writes and output stay on this thread, in input order.
+    chunk_size = 32 * workers
+
+    def flush() -> None:
+        nonlocal shard_idx
+        out_path = out_dir / f"rows_with_eval_part{shard_idx:05d}.parquet"
+        pq.write_table(
+            pa.Table.from_pylist(buffer, schema=OUTPUT_SCHEMA),
+            out_path,
+            compression="zstd",
+        )
+        keys = [(r["game_id"], int(r["ply"])) for r in buffer]
+        mark_rows_done(row_conn, keys)
+        LOG.info("Wrote %s (%s rows)", out_path.name, len(buffer))
+        buffer.clear()
+        shard_idx += 1
 
     try:
-        with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
-            engine.configure({"Threads": threads, "Hash": hash_mb})
+        with contextlib.ExitStack() as stack, ThreadPoolExecutor(max_workers=workers) as pool:
+            engines: queue.Queue = queue.Queue()
+            for _ in range(workers):
+                eng = stack.enter_context(chess.engine.SimpleEngine.popen_uci(stockfish_path))
+                eng.configure({"Threads": threads, "Hash": hash_mb})
+                engines.put(eng)
             limit_obj = chess.engine.Limit(depth=depth)
 
+            def analyse(fen: str) -> tuple[dict, float]:
+                board = chess.Board(fen)
+                eng = engines.get()
+                try:
+                    t_e0 = time.perf_counter()
+                    raw_info = eng.analyse(board, limit_obj, multipv=multipv)
+                    dt = time.perf_counter() - t_e0
+                finally:
+                    engines.put(eng)
+                info = raw_info[0] if isinstance(raw_info, list) else raw_info
+                return extract_eval_fields(board, info), dt
+
+            def process_chunk(rows: list[dict]) -> None:
+                fields_by_fen: dict[str, dict] = {}
+                misses: list[str] = []
+                for row in rows:
+                    fen = row["fen"]
+                    if fen in fields_by_fen or fen in misses:
+                        continue
+                    cached = cache_get(fen_conn, fen)
+                    if cached is not None:
+                        stats["cache_hits"] += 1
+                        fields_by_fen[fen] = cached
+                    else:
+                        misses.append(fen)
+                for fen, (fields, dt) in zip(misses, pool.map(analyse, misses)):
+                    stats["engine_calls"] += 1
+                    stats["t_engine"] += dt
+                    fields_by_fen[fen] = fields
+                    cache_put(fen_conn, fen, fields)
+                fen_conn.commit()
+                for row in rows:
+                    buffer.append({**row, **fields_by_fen[row["fen"]]})
+                    stats["rows_out"] += 1
+                    if len(buffer) >= flush_rows:
+                        flush()
+
+            pending: list[dict] = []
             for ipath in inputs:
                 if limit_reached:
                     break
@@ -204,63 +268,21 @@ def run(
                         if limit_reached:
                             break
                         for row in batch.to_pylist():
-                            if max_rows is not None and stats["rows_out"] >= max_rows:
+                            if max_rows is not None and stats["rows_out"] + len(pending) >= max_rows:
                                 limit_reached = True
                                 break
-                            gid = row["game_id"]
-                            ply = int(row["ply"])
-                            if resume and is_row_done(row_conn, gid, ply):
+                            if resume and is_row_done(row_conn, row["game_id"], int(row["ply"])):
                                 stats["rows_skipped_done"] += 1
                                 continue
-
-                            fen = row["fen"]
-                            board = chess.Board(fen)
-
-                            cached = cache_get(fen_conn, fen)
-                            if cached is not None:
-                                stats["cache_hits"] += 1
-                                fields = cached
-                            else:
-                                t_e0 = time.perf_counter()
-                                raw_info = engine.analyse(
-                                    board, limit_obj, multipv=multipv
-                                )
-                                info = raw_info[0] if isinstance(raw_info, list) else raw_info
-                                stats["engine_calls"] += 1
-                                stats["t_engine"] += time.perf_counter() - t_e0
-                                fields = extract_eval_fields(board, info)
-                                cache_put(fen_conn, fen, fields)
-                                fen_conn.commit()
-
-                            out_row = {**row, **fields}
-                            buffer.append(out_row)
-                            stats["rows_out"] += 1
-
-                            if len(buffer) >= flush_rows:
-                                out_path = out_dir / f"rows_with_eval_part{shard_idx:05d}.parquet"
-                                pq.write_table(
-                                    pa.Table.from_pylist(buffer, schema=OUTPUT_SCHEMA),
-                                    out_path,
-                                    compression="zstd",
-                                )
-                                keys = [(r["game_id"], int(r["ply"])) for r in buffer]
-                                mark_rows_done(row_conn, keys)
-                                LOG.info("Wrote %s (%s rows)", out_path.name, len(buffer))
-                                buffer.clear()
-                                shard_idx += 1
+                            pending.append(row)
+                            if len(pending) >= chunk_size:
+                                process_chunk(pending)
+                                pending = []
+            if pending:
+                process_chunk(pending)
 
         if buffer:
-            out_path = out_dir / f"rows_with_eval_part{shard_idx:05d}.parquet"
-            pq.write_table(
-                pa.Table.from_pylist(buffer, schema=OUTPUT_SCHEMA),
-                out_path,
-                compression="zstd",
-            )
-            keys = [(r["game_id"], int(r["ply"])) for r in buffer]
-            mark_rows_done(row_conn, keys)
-            LOG.info("Wrote %s (%s rows)", out_path.name, len(buffer))
-            buffer.clear()
-            shard_idx += 1
+            flush()
 
     except chess.engine.EngineTerminatedError as e:
         LOG.error("Stockfish failed (%s). Is `%s` on PATH?", e, stockfish_path)
@@ -284,7 +306,8 @@ def run(
     if stats["engine_calls"] > 0:
         extrap = (
             f"Rough extrapolation: 1M new engine positions ≈ "
-            f"{stats['t_engine'] / stats['engine_calls'] * 1e6 / 3600:.1f} CPU-hours at this policy (single process)."
+            f"{stats['t_engine'] / stats['engine_calls'] * 1e6 / 3600:.1f} engine-hours at this policy "
+            f"(÷ {workers} workers for wall time)."
         )
         LOG.info(extrap)
 
@@ -355,6 +378,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--flush-rows", type=int, default=10_000, help="Rows per output Parquet shard")
     p.add_argument("--resume", action="store_true", help="Skip (game_id,ply) in checkpoint DB")
     p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Parallel Stockfish processes (each uses the policy's threads / hash)",
+    )
+    p.add_argument(
         "--summary-json",
         type=Path,
         default=None,
@@ -398,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         flush_rows=args.flush_rows,
         resume=args.resume,
         summary_json=summary_path,
+        workers=args.workers,
     )
 
 

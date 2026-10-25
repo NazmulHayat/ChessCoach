@@ -117,6 +117,7 @@ def build_phase_b_command(
     policy: Path,
     summary_json: Path,
     nice: int,
+    workers: int = 1,
 ) -> list[str]:
     mod = [
         sys.executable,
@@ -140,6 +141,8 @@ def build_phase_b_command(
         str(flush_rows),
         "--summary-json",
         str(summary_json),
+        "--workers",
+        str(workers),
     ]
     if os.name != "nt" and nice != 0:
         return ["nice", "-n", str(nice)] + mod
@@ -179,6 +182,7 @@ def run_loop(cfg: argparse.Namespace) -> int:
     )
 
     batch_idx = 0
+    failures = 0
     while True:
         elapsed_h = (time.perf_counter() - t_start) / 3600.0
         if elapsed_h >= cfg.max_wall_hours:
@@ -239,6 +243,7 @@ def run_loop(cfg: argparse.Namespace) -> int:
             policy=Path(cfg.policy),
             summary_json=summary_path,
             nice=cfg.nice,
+            workers=cfg.workers,
         )
 
         if cfg.dry_run:
@@ -271,10 +276,18 @@ def run_loop(cfg: argparse.Namespace) -> int:
 
         batch_sec = time.perf_counter() - t0
         if rc != 0:
-            LOG.error("Phase B exited with code %s (see %s)", rc, log_path)
-            state["stopped_reason"] = f"phase_b_exit_{rc}"
-            _save_json(state_path, state)
-            return rc
+            # Typical cause: macOS killing Stockfish under memory pressure. Evals already done are in
+            # the FEN cache and rows resume from the checkpoint, so a retry loses little work.
+            failures += 1
+            LOG.error("Phase B exited with code %s (see %s) [failure %s/%s]", rc, log_path, failures, cfg.max_retries + 1)
+            if failures > cfg.max_retries:
+                state["stopped_reason"] = f"phase_b_exit_{rc}"
+                _save_json(state_path, state)
+                return rc
+            LOG.info("Retrying after %ss…", max(cfg.cooldown_sec, 30))
+            time.sleep(float(max(cfg.cooldown_sec, 30)))
+            continue
+        failures = 0
 
         summ = _load_json(summary_path)
         written = int(summ.get("rows_written", 0))
@@ -338,6 +351,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Stockfish policy JSON (default: engine_policy_background.json — cooler)",
     )
     p.add_argument("--batch-rows", type=int, default=20_000, help="Max new rows per Stockfish run")
+    p.add_argument("--workers", type=int, default=1, help="Parallel Stockfish processes inside Phase B")
+    p.add_argument("--max-retries", type=int, default=5, help="Consecutive failed batches to retry before stopping")
     p.add_argument("--flush-rows", type=int, default=10_000, help="Parquet shard size (same as Phase B)")
     p.add_argument("--cooldown-sec", type=int, default=120, help="Pause between batches (0 = none)")
     p.add_argument("--nice", type=int, default=15, help="Unix nice level for Phase B (0 = disabled on Unix)")

@@ -1,0 +1,8 @@
+{
+  "stockfish_path": "stockfish",
+  "depth": 17,
+  "threads": 1,
+  "hash_mb": 64,
+  "multipv": 1,
+  "description": "Parallel Phase B: one search thread per engine, run with safe_run/augment_evals --workers N. Same depth as engine_policy.json; single-threaded search is deterministic."
+}
