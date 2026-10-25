@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BOARD_THEMES, type BoardTheme, type Settings } from '../lib/settings'
+import { BOARD_THEMES, type Appearance, type BoardTheme, type Settings } from '../lib/settings'
 
 export function SettingsMenu({ settings, onChange }: { settings: Settings; onChange: (patch: Partial<Settings>) => void }) {
   const [open, setOpen] = useState(false)
@@ -31,6 +31,11 @@ export function SettingsMenu({ settings, onChange }: { settings: Settings; onCha
       </button>
       {open && (
         <div className="settings-pop" role="dialog" aria-label="Settings">
+          <label className="settings-label">Appearance
+            <select className="field" value={settings.appearance} onChange={(e) => onChange({ appearance: e.target.value as Appearance })}>
+              <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
+            </select>
+          </label>
           <div className="section-title">Board</div>
           <div className="theme-grid">
             {(Object.keys(BOARD_THEMES) as BoardTheme[]).map((t) => (
@@ -50,6 +55,10 @@ export function SettingsMenu({ settings, onChange }: { settings: Settings; onCha
             <span>Move sounds</span>
             <input type="checkbox" checked={settings.sounds} onChange={(e) => onChange({ sounds: e.target.checked })} />
             <span className="toggle" aria-hidden />
+          </label>
+          <label className="volume-row">
+            <span>Volume <output>{settings.volume}%</output></span>
+            <input type="range" min="0" max="100" step="1" value={settings.volume} disabled={!settings.sounds} onChange={(e) => onChange({ volume: Number(e.target.value) })} />
           </label>
         </div>
       )}

@@ -2,7 +2,7 @@ import { Chess } from 'chess.js'
 import { createContext, forwardRef, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Chessboard } from 'react-chessboard'
 import type { CustomSquareProps, Piece, Square } from 'react-chessboard/dist/chessboard/types'
-import { initials } from '../format'
+import { useReducedMotion } from '../lib/motion'
 import { capturedFrom, type Captured, type PieceType } from '../lib/material'
 import type { Label, Side } from '../types'
 import { LabelIcon } from './LabelIcon'
@@ -28,7 +28,7 @@ const BadgeSquare = forwardRef<HTMLDivElement, CustomSquareProps>(function Badge
     <div ref={ref} style={{ ...style, position: 'relative' }}>
       {children}
       {badge && badge.square === square && (
-        <span className="square-badge">
+        <span className="square-badge" key={`${badge.square}-${badge.label}`}>
           <LabelIcon label={badge.label} size={26} />
         </span>
       )}
@@ -64,7 +64,7 @@ function CapturedPieces({ side, cap }: { side: Side; cap: Captured }) {
 function PlayerBar({ p, cap }: { p: PlayerInfo; cap: Captured }) {
   return (
     <div className="player-bar">
-      <div className={`avatar ${p.side === 'white' ? 'avatar-w' : ''}`}>{initials(p.name)}</div>
+      <div className={`avatar ${p.side === 'white' ? 'avatar-w' : ''}`}>{p.name.charAt(0).toUpperCase()}</div>
       <div className="player-id">
         <div className="player-line">
           <span className="player-name">{p.name}</span>
@@ -99,9 +99,12 @@ interface Props {
   whiteShare: number
   evalText: string
   colors?: { light: string; dark: string }
+  onStep?: (direction: -1 | 1) => void
 }
 
-export function BoardArea({ fen, input, inputSession, orientation, white, black, lastMove, badge, arrow, whiteShare, evalText, colors }: Props) {
+export function BoardArea({ fen, input, inputSession, orientation, white, black, lastMove, badge, arrow, whiteShare, evalText, colors, onStep }: Props) {
+  const swipe = useRef<{ id: number; x: number; y: number; time: number } | null>(null)
+  const reducedMotion = useReducedMotion()
   const captured = useMemo(() => capturedFrom(fen), [fen])
   // Click-to-move (touch friendly): first click picks a piece, second picks the target.
   const [selected, setSelected] = useState<string | null>(null)
@@ -162,7 +165,7 @@ export function BoardArea({ fen, input, inputSession, orientation, white, black,
   }
 
   const arrows = useMemo(
-    () => (arrow ? [[arrow.from as Square, arrow.to as Square, 'rgba(255, 170, 0, 0.82)'] as [Square, Square, string]] : []),
+    () => (arrow ? [[arrow.from as Square, arrow.to as Square, 'var(--arrow)'] as [Square, Square, string]] : []),
     [arrow],
   )
 
@@ -176,11 +179,25 @@ export function BoardArea({ fen, input, inputSession, orientation, white, black,
     <div className={`board-area ${input ? 'board-input' : ''}`}>
       <PlayerBar p={top} cap={captured[top.side]} />
       <div className="board-row">
-        <div className={`eval-bar ${orientation === 'black' ? 'eval-flipped' : ''}`} aria-label={`Evaluation ${evalText}`}>
+        <div className={`eval-bar ${orientation === 'black' ? 'eval-flipped' : ''}`} aria-label={`${whiteShare >= .5 ? 'White' : 'Black'} ahead: ${evalText}`}>
           <div className="eval-fill" style={{ height: `${bottomShare * 100}%` }} />
-          <span className={`eval-text ${bottomAhead ? 'eval-bottom' : 'eval-top'}`}>{evalText}</span>
+          <span key={evalText} className={`eval-text ${bottomAhead ? 'eval-bottom' : 'eval-top'}`}>{evalText}</span>
         </div>
-        <div className="board">
+        <div className="board" role="group" aria-label={inputSession ? 'Retry position: drag a piece or tap its start and destination' : 'Chessboard'}
+          style={{ touchAction: inputSession ? 'none' : 'pan-y' }}
+          onPointerDown={(e) => {
+            if (onStep && !inputSession && e.pointerType !== 'mouse') swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY, time: performance.now() }
+          }}
+          onPointerCancel={() => { swipe.current = null }}
+          onPointerUp={(e) => {
+            const start = swipe.current
+            swipe.current = null
+            if (!start || start.id !== e.pointerId || inputSession || !onStep) return
+            const dx = e.clientX - start.x
+            const dy = e.clientY - start.y
+            if (performance.now() - start.time < 900 && Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy) * 1.4) onStep(dx < 0 ? 1 : -1)
+          }}
+        >
           <BadgeContext.Provider value={badge}>
             <Chessboard
               key={inputSession ?? 'view'}
@@ -197,13 +214,13 @@ export function BoardArea({ fen, input, inputSession, orientation, white, black,
               }}
               onSquareClick={onSquareClick}
               areArrowsAllowed={false}
-              animationDuration={200}
+              animationDuration={reducedMotion ? 0 : 200}
               customArrows={arrows}
               customSquare={BadgeSquare}
               customSquareStyles={squareStyles}
               customDarkSquareStyle={{ backgroundColor: colors?.dark ?? 'var(--sq-dark)' }}
               customLightSquareStyle={{ backgroundColor: colors?.light ?? 'var(--sq-light)' }}
-              customBoardStyle={{ borderRadius: '4px', boxShadow: '0 6px 24px rgba(0,0,0,.35)' }}
+              customBoardStyle={{ borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-board)' }}
             />
           </BadgeContext.Provider>
         </div>

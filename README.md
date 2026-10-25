@@ -6,7 +6,9 @@
 
 Stockfish says +1.5 no matter who is playing. ChessCoach asks a different question: *how often does a player at this rating, in this time control, with this much time left, actually score from here?* That number, **expected points (EP)**, drives a Chess.com-style Game Review: every move is labelled by how much it changed the mover's practical chances, not by a fixed centipawn cutoff.
 
-![Game review screen](docs/images/review.png)
+![Game review screen from the earlier UI](docs/images/review.png)
+
+*Screenshots show the earlier interface. The UI pass below adds a welcome screen, inline help, light mode, and phone controls; updated captures are pending.*
 
 Chess.com's current Game Review also uses an expected-points model built from rating and engine eval ([their docs](https://support.chess.com/en/articles/8572705-how-are-moves-classified-what-is-a-blunder-or-brilliant-move)). ChessCoach is an **open, measurable rebuild of that idea, extended with time pressure**: it also conditions on time control and clock, is trained on the public Lichess database, and publishes how well it is calibrated against simpler baselines.
 
@@ -43,11 +45,13 @@ Where the 12M positions came from: about 1 in 9 games in the Lichess dump was al
 |---|---|---|
 | ![Import screen](docs/images/import.png) | ![Summary screen](docs/images/summary.png) | ![Retry mode](docs/images/retry.png) |
 
-- **Import** from a Chess.com or Lichess username (recent games, no login), or paste a PGN.
+- **Import** from a Chess.com or Lichess username (recent games, no login), paste a PGN, or try the bundled seven-move sample. The last five reviewed games stay in browser storage for re-analysis.
 - **Live analysis**: Stockfish runs on a pool of parallel engines with the top two lines per position (a 62-move game at depth 17 in about 24 s with 4 engines; re-opening a game is instant from the cache); progress streams to the page.
 - **Summary**: accuracy for both players (Lichess's method), a **game rating** ("played like a 1950": the rating of players who typically play as well as you did, next to your own), label counts, **opening / middlegame / endgame grades**, key moments, advantage graph.
 - **Review**: board with move badges, last-move highlight, best-move arrows, move animation, captured pieces and material lead in the player bars; eval bar that switches between **Chances** (EP) and raw **Engine** score; a coach that explains each move and points out where an eval-only review would disagree; clickable graph; move list; flip button; keyboard (← → Home End, Space to play, F to flip).
-- **Settings**: four board themes and move sounds (synthesised with Web Audio, no audio files), saved per browser. Works on phones (single-column layout, tap-to-move in retry mode).
+- **Settings**: System / Light / Dark appearance, four board colors, and synthesized move sounds with volume, saved per browser. Phone controls stay visible; swipe the board to step through moves, or drag/tap pieces in retry mode. Motion follows your reduced-motion preference.
+- **Help**: tap metric info buttons or the move-label legend, press `?` for keyboard shortcuts, and follow the dismissible first-review tour. Graph tooltips show the move, label and chances; the summary can hide unused labels.
+- **UI assets**: Inter via Google Fonts (OFL 1.1), with a system-font fallback; built-in pieces and original synthesized audio. See [asset credits and fallback decisions](web/public/CREDITS.md).
 - **Labels** use Chess.com's published expected-points bands: best (engine move), excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%, plus book moves from a polyglot opening book.
 - **Great / Miss / Brilliant**: our own documented rules on the engine's top two lines. Great = the only good move; Miss = gives back most of the opponent's mistake; Brilliant = a sound sacrifice (static-exchange check) that wasn't needed to stay winning. Thresholds scale with rating. Rules in [`docs/methodology.md`](docs/methodology.md#great-miss-and-brilliant).
 - **Coach**: template text from the review numbers, with tactic hints computed by python-chess ("hangs the knight on d5", "allows mate in 2", "missed Nxd4, winning the queen") and the engine's main line. Optional **AI notes**: set `ANTHROPIC_API_KEY` and an *Explain* button asks Claude to explain a move from the computed facts only. Off by default; everything else works without a key.

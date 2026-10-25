@@ -1,6 +1,7 @@
 // Per-browser preferences (board theme, sounds), kept in localStorage when available.
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
+export type Appearance = 'system' | 'light' | 'dark'
 export type BoardTheme = 'slate' | 'green' | 'walnut' | 'ice'
 
 export const BOARD_THEMES: Record<BoardTheme, { name: string; light: string; dark: string }> = {
@@ -13,16 +14,23 @@ export const BOARD_THEMES: Record<BoardTheme, { name: string; light: string; dar
 export interface Settings {
   theme: BoardTheme
   sounds: boolean
+  volume: number
+  appearance: Appearance
 }
 
 const KEY = 'cc.settings'
-const DEFAULTS: Settings = { theme: 'slate', sounds: true }
+const DEFAULTS: Settings = { theme: 'slate', sounds: true, volume: 70, appearance: 'system' }
 
 function load(): Settings {
   try {
     const raw = localStorage.getItem(KEY)
     const s = raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS
-    return s.theme in BOARD_THEMES ? s : { ...s, theme: DEFAULTS.theme }
+    return {
+      theme: Object.prototype.hasOwnProperty.call(BOARD_THEMES, s.theme) ? s.theme : DEFAULTS.theme,
+      appearance: s.appearance === 'light' || s.appearance === 'dark' ? s.appearance : 'system',
+      sounds: typeof s.sounds === 'boolean' ? s.sounds : DEFAULTS.sounds,
+      volume: typeof s.volume === 'number' && Number.isFinite(s.volume) ? Math.min(100, Math.max(0, s.volume)) : DEFAULTS.volume,
+    }
   } catch {
     return DEFAULTS
   }
@@ -30,6 +38,17 @@ function load(): Settings {
 
 export function useSettings(): [Settings, (patch: Partial<Settings>) => void] {
   const [settings, setSettings] = useState<Settings>(load)
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: light)')
+    const apply = () => {
+      document.documentElement.dataset.theme = settings.appearance === 'system' ? (query.matches ? 'light' : 'dark') : settings.appearance
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color)
+    }
+    apply()
+    query.addEventListener('change', apply)
+    return () => query.removeEventListener('change', apply)
+  }, [settings.appearance])
   const update = useCallback((patch: Partial<Settings>) => {
     setSettings((cur) => {
       const next = { ...cur, ...patch }

@@ -1,8 +1,8 @@
 // Coach bubble text, filled in from the review numbers (no LLM).
 import { BAD_LABELS, describe, LABELS } from './labels'
-import { pct, timeClassLabel } from './format'
+import { engineScore, timeClassLabel } from './format'
 import type { RetryState } from './App'
-import type { Review, ReviewMove } from './types'
+import type { Review, ReviewMove, ReviewPosition } from './types'
 
 export interface CoachText {
   title: string
@@ -27,57 +27,61 @@ function playerName(review: Review, side: 'white' | 'black'): string {
   return review.headers[side === 'white' ? 'White' : 'Black'] || (side === 'white' ? 'White' : 'Black')
 }
 
-function levelPhrase(review: Review, side: 'white' | 'black'): string {
-  const elo = side === 'white' ? review.white_elo : review.black_elo
-  return `${Math.round(elo / 50) * 50} ${review.time_class}`
+/** Who stands better, in words, from a white-POV engine score (Chess.com-style: no percentages). */
+function standing(review: Review, p: ReviewPosition): string {
+  const white = playerName(review, 'white')
+  const black = playerName(review, 'black')
+  if (p.mate !== null) {
+    if (p.mate === 0) return 'Checkmate'
+    return `${p.mate > 0 ? white : black} has mate in ${Math.abs(p.mate)}`
+  }
+  const cp = p.cp ?? 0
+  const side = cp > 0 ? white : black
+  const a = Math.abs(cp)
+  if (a < 50) return 'The position is equal'
+  if (a < 150) return `${side} is slightly better`
+  if (a < 300) return `${side} is better`
+  return `${side} is winning`
 }
 
+/** "Evaluation: +0.6 → -3.6" (white's view, like Chess.com and Lichess). */
+function evalChange(review: Review, move: ReviewMove): string {
+  return `Evaluation: ${engineScore(review.positions[move.ply - 1])} → ${engineScore(review.positions[move.ply])}`
+}
+
+const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+
 export function moveCoach(review: Review, move: ReviewMove): CoachText {
-  const who = playerName(review, move.mover)
   const label = move.ep_label
   const title = `${move.san} is ${describe(label)}`
+  const after = review.positions[move.ply]
 
   if (label === 'book') {
     const opening = review.headers.Opening || review.headers.ECOUrl?.split('/').pop()?.replace(/-/g, ' ')
-    return { title, body: opening ? `Still in opening theory: ${opening}.` : 'Still in opening theory.' }
+    return { title, body: opening ? `A known opening move: ${opening}.` : 'This move follows a known opening.' }
   }
 
   const opp = playerName(review, move.mover === 'white' ? 'black' : 'white')
+  const now = `${standing(review, after)}.`
+  const bestWas = move.best_san && move.best_san !== move.san ? ` ${move.best_san} was best.` : ''
   let body: string
   if (label === 'brilliant') {
-    body = `${who} gives up ${move.sacrifice_piece ? `the ${move.sacrifice_piece}` : materialPhrase(move.sacrifice)} and the position holds: chances ${pct(move.ep_after)}.`
-    if (move.ep_second !== null && move.second_san && move.san !== move.second_san) body += ` The quieter ${move.second_san} gave ${pct(move.ep_second)}.`
+    body = `Gives up ${move.sacrifice_piece ? `the ${move.sacrifice_piece}` : materialPhrase(move.sacrifice)}, and it works. ${now}`
   } else if (label === 'great') {
-    body = `The only good move. ${who}'s chances stay at ${pct(move.ep_after)}`
-    body += move.second_san && move.ep_second !== null ? `; the next best, ${move.second_san}, gave ${pct(move.ep_second)}.` : '.'
-  } else if (label === 'miss') {
-    body = `${opp} had just slipped, and this gives most of it back: chances ${pct(move.ep_best)} → ${pct(move.ep_after)}.`
-    if (move.tactic) body = `${move.san} ${move.tactic}. ${body}`
-    if (move.best_san) body += ` ${move.best_san} kept the advantage.`
+    body = `The only good move here${move.second_san ? `: anything else, even ${move.second_san}, was much worse` : ''}. ${now}`
   } else if (label === 'best') {
-    body = `${who}'s chances stay at ${pct(move.ep_after)}.`
+    body = now
+  } else if (label === 'miss') {
+    body = `${opp} had just made a mistake, and this lets them off the hook.${bestWas} ${now}`
+    if (move.tactic) body = `${capitalize(move.tactic)}. ${body}`
   } else if (BAD_LABELS.includes(label)) {
-    body = `${who}'s chances dropped from ${pct(move.ep_best)} to ${pct(move.ep_after)}.`
-    if (move.tactic) body = `${move.san} ${move.tactic}. ${body}`
-    if (move.best_san) body += ` ${move.best_san} was best.`
+    body = `${move.tactic ? `${capitalize(move.tactic)}. ` : ''}${now}${bestWas}`
   } else {
-    body = `${who}'s chances: ${pct(move.ep_after)}.`
-    if (move.best_san) body += ` ${move.best_san} was best (${pct(move.ep_best)}).`
+    body = `${now}${bestWas}`
   }
   const line = BAD_LABELS.includes(label) && move.best_line_san.length > 1 ? `Best: ${formatLine(move.best_line_san, move.ply)}` : undefined
-
-  let note: string | undefined
-  const evalOnly = move.lichess_label
-  const base = move.base_label
-  if (evalOnly !== base && evalOnly !== 'book' && base !== 'best' && label !== 'brilliant' && label !== 'great') {
-    const level = levelPhrase(review, move.mover)
-    const harsher = move.lichess_loss > move.ep_loss
-    note = harsher
-      ? `An eval-only review would call this ${describe(evalOnly)}. The engine score drops more, but at ${level} this position is still very playable.`
-      : `An eval-only review would call this ${describe(evalOnly)}. The engine score barely moves, but at ${level} this costs real chances.`
-    if (base !== label) note = undefined
-  }
-  return { title, body, note, line }
+  const note = label === 'best' || label === 'great' || label === 'brilliant' ? undefined : evalChange(review, move)
+  return { title, body: body.trim(), note, line }
 }
 
 export function retryCoach(move: ReviewMove, retry: RetryState): CoachText {
@@ -97,19 +101,17 @@ export function retryCoach(move: ReviewMove, retry: RetryState): CoachText {
       const exact = r.uci === move.best_uci
       return {
         title: `${r.san} is correct!`,
-        body: exact
-          ? `That’s the engine’s top move: chances ${pct(move.ep_best)} instead of ${pct(move.ep_after)}.`
-          : `As good as the engine’s ${move.best_san}: chances ${pct(r.ep_after)} instead of ${pct(move.ep_after)}.`,
+        body: exact ? 'That’s the best move.' : `That works just as well as ${move.best_san}.`,
         line: exact ? formatLine(move.best_line_san, move.ply) : undefined,
       }
     }
     case 'wrong':
     case 'solution': {
-      const tried = r ? (Number.isNaN(r.ep_after) ? `${r.san} isn’t the engine’s move.` : `${r.san} gives ${pct(r.ep_after)}; the best move keeps ${pct(move.ep_best)}.`) : ''
-      if (retry.phase === 'wrong') return { title: 'Not quite', body: `${tried} Try again?` }
+      const tried = r ? `${r.san} isn’t the best move here.` : ''
+      if (retry.phase === 'wrong') return { title: 'Not quite', body: `${tried} Try another move.` }
       return {
         title: `The move was ${move.best_san}`,
-        body: `${tried} ${move.best_san} keeps ${color}’s chances at ${pct(move.ep_best)}.`.trim(),
+        body: tried,
         line: formatLine(move.best_line_san, move.ply),
       }
     }
@@ -142,10 +144,10 @@ export function summaryCoach(review: Review): CoachText {
   const title = winner ? `${playerName(review, winner)} won` : result === '1/2-1/2' ? 'A draw' : 'Game review'
   let body: string
   if (bad.length === 0) {
-    body = 'No mistakes or blunders by either side. A clean game decided by small edges.'
+    body = 'No mistakes or blunders by either side. Explore the key moments to see how the game unfolded.'
   } else {
     const first = bad[0]
-    body = `The turning point: ${san(first)} by ${playerName(review, first.mover)} (${LABELS[first.ep_label].name.toLowerCase()}, chances ${pct(first.ep_best)} → ${pct(first.ep_after)}).`
+    body = `The turning point: ${san(first)} by ${playerName(review, first.mover)}, a ${LABELS[first.ep_label].name.toLowerCase()}.`
     if (bad.length > 1) body += ` Also look at ${bad.slice(1, 3).map(san).join(' and ')}.`
   }
   if (brilliant.length) body += ` Don’t miss ${san(brilliant[0])}, a brilliant sacrifice by ${playerName(review, brilliant[0].mover)}.`

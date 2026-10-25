@@ -9,6 +9,12 @@ import { Graph } from './components/Graph'
 import { ImportPanel } from './components/ImportPanel'
 import { MoveList } from './components/MoveList'
 import { SettingsMenu } from './components/SettingsMenu'
+import { HelpMenu } from './components/HelpMenu'
+import { InfoTip } from './components/InfoTip'
+import { ReviewTour } from './components/ReviewTour'
+import { MODE_HELP } from './lib/help'
+import { Welcome } from './components/Welcome'
+import { rememberGame } from './lib/recent'
 import { Summary } from './components/Summary'
 import { engineScore, engineWhiteShare, pct } from './format'
 import { play, soundForSan } from './lib/sound'
@@ -70,17 +76,16 @@ export default function App() {
   const [stage, setStage] = useState<Stage>('import')
   const [review, setReview] = useState<Review | null>(null)
   const [ply, setPly] = useState(0)
-  const [mode, setMode] = useState<Mode>('chances')
+  const [mode, setMode] = useState<Mode>('engine') // engine score by default, as Chess.com shows it
   const [orientation, setOrientation] = useState<Side>('white')
   const [playing, setPlaying] = useState(false)
   const [showBest, setShowBest] = useState(false)
-  const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
+  const [progress, setProgress] = useState({ done: 0, total: 0, elapsed: 0 })
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<Record<string, string>>({})
   const [you, setYou] = useState<Side | null>(null)
   const [retry, setRetry] = useState<RetryState | null>(null)
   const [settings, updateSettings] = useSettings()
-  const [serverDown, setServerDown] = useState(false)
   const [explainOn, setExplainOn] = useState(false)
   const [notes, setNotes] = useState<Record<number, { text?: string; loading?: boolean; error?: string }>>({})
   const [lastPgn, setLastPgn] = useState<{ pgn: string; side?: Side } | null>(null)
@@ -89,7 +94,6 @@ export default function App() {
 
   useEffect(() => {
     health().then((h) => {
-      setServerDown(h === null)
       setExplainOn(!!h?.explain)
     })
   }, [])
@@ -105,6 +109,8 @@ export default function App() {
 
   const analyze = useCallback(async (pgn: string, side?: Side) => {
     abort.current?.abort()
+    setPlaying(false)
+    prevPly.current = 0
     setYou(side ?? null)
     setOrientation(side ?? 'white')
     setLastPgn({ pgn, side })
@@ -116,12 +122,15 @@ export default function App() {
     setNotes({})
     setPly(0)
     setPending(previewHeaders(pgn))
-    setProgress({ done: 0, total: 0 })
+    setProgress({ done: 0, total: 0, elapsed: 0 })
+    const started = Date.now()
     setStage('analyzing')
     try {
-      const r = await streamReview(pgn, (done, t) => setProgress({ done, total: t }), ctrl.signal)
+      const r = await streamReview(pgn, (done, t) => {
+        if (!ctrl.signal.aborted) setProgress({ done, total: t, elapsed: (Date.now() - started) / 1000 })
+      }, ctrl.signal)
       setReview(r)
-      setServerDown(false)
+      rememberGame(pgn, r.headers, side)
       setStage('summary')
     } catch (e) {
       if (ctrl.signal.aborted) return
@@ -142,33 +151,38 @@ export default function App() {
 
   const flip = useCallback(() => setOrientation((o) => (o === 'white' ? 'black' : 'white')), [])
 
-  // Move sounds when stepping forward one move (arrow, autoplay, next button).
+  // Forward navigation includes clicks and jumps; backward navigation stays quiet.
   useEffect(() => {
     const prev = prevPly.current
     prevPly.current = ply
-    if (!review || !settings.sounds || stage !== 'review' || ply !== prev + 1) return
-    play(soundForSan(review.moves[ply - 1].san))
-  }, [ply, review, settings.sounds, stage])
+    if (!review || !settings.sounds || stage !== 'review' || ply <= prev || ply === 0) return
+    play(soundForSan(review.moves[ply - 1].san), settings.volume)
+    if (ply === review.moves.length) {
+      const timer = setTimeout(() => play('end', settings.volume), 180)
+      return () => clearTimeout(timer)
+    }
+  }, [ply, review, settings.sounds, settings.volume, stage])
 
   // Keyboard: ← → Home End, Space play, F flip.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!review || stage === 'analyzing' || stage === 'import') return
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.key === 'ArrowRight') {
-        if (stage === 'summary') setStage('review')
-        go(ply + 1)
-      } else if (e.key === 'ArrowLeft') go(ply - 1)
+      const target = e.target as HTMLElement
+      if (e.ctrlKey || e.metaKey || e.altKey || target.closest('input, textarea, select, [contenteditable="true"], [popover], [role="dialog"]')) return
+      if (e.key === ' ' && target.closest('button')) return
+      if (['ArrowRight', 'ArrowLeft', 'Home', 'End', ' '].includes(e.key)) setStage('review')
+      if (e.key === 'ArrowRight') go(ply + 1)
+      else if (e.key === 'ArrowLeft') go(ply - 1)
       else if (e.key === 'Home') go(0)
       else if (e.key === 'End') go(total)
-      else if (e.key === ' ') setPlaying((p) => !p)
+      else if (e.key === ' ' && !retry) setPlaying((p) => !p)
       else if (e.key.toLowerCase() === 'f') flip()
       else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [review, stage, ply, total, go, flip])
+  }, [review, stage, ply, total, go, flip, retry])
 
   // Autoplay.
   useEffect(() => {
@@ -198,15 +212,16 @@ export default function App() {
     try {
       san = chess.move({ from, to, promotion }).san
     } catch {
+      if (settings.sounds) play('illegal', settings.volume)
       return false
     }
     const uci = from + to + (promotion ?? '')
     const tries = retry.tries + 1
     const base = { ply: retry.ply, tries, attempt: { from, to } }
     setRetry({ ...base, phase: 'checking', fen: chess.fen() })
-    if (settings.sounds) play(soundForSan(san))
+    if (settings.sounds) play(soundForSan(san), settings.volume)
     const finish = (result: RetryResult) => {
-      if (settings.sounds) setTimeout(() => play(result.correct ? 'correct' : 'wrong'), 150)
+      if (settings.sounds) play(result.correct ? 'correct' : 'wrong', settings.volume)
       setRetry((cur) => {
         if (!cur || cur.ply !== base.ply || cur.phase !== 'checking') return cur
         if (result.correct) return { ...base, phase: 'correct', fen: chess.fen(), result }
@@ -224,7 +239,7 @@ export default function App() {
         })
     }
     return true
-  }, [review, retry, settings.sounds])
+  }, [review, retry, settings.sounds, settings.volume])
 
   const me: Side = you ?? orientation
   const myMistakes = useMemo(
@@ -254,7 +269,7 @@ export default function App() {
   const clockFor = (side: Side): string | null => {
     if (!review) return null
     // Most recent known clock for `side` at or before the shown position.
-    for (let i = Math.min(ply, review.moves.length - 1); i >= 0; i--) {
+    for (let i = Math.min(ply - 1, review.moves.length - 1); i >= 0; i--) {
       const m = review.moves[i]
       if (m.mover === side && m.clock_sec !== null) return formatClock(m.clock_sec)
     }
@@ -308,7 +323,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <img src="/favicon.svg" alt="" width={26} height={26} />
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={26} height={26} />
           <span>ChessCoach</span>
         </div>
         <div className="topbar-actions">
@@ -317,19 +332,13 @@ export default function App() {
               New game
             </button>
           )}
+          <HelpMenu kind="shortcuts" />
           <SettingsMenu settings={settings} onChange={updateSettings} />
         </div>
       </header>
-      {serverDown && (
-        <div className="server-down" role="alert">
-          Can’t reach the analysis server. Start it with <code>python -m ep_model.phase_d.server</code>, then{' '}
-          <button type="button" className="link-btn" onClick={() => health().then((h) => setServerDown(h === null))}>check again</button>.
-        </div>
-      )}
-
-      <main className="layout">
+      <main className={`layout ${stage === 'import' || stage === 'analyzing' ? 'layout-welcome' : ''}`}>
         <section className="left">
-          <BoardArea
+          {stage === 'import' || stage === 'analyzing' ? <Welcome /> : <BoardArea
             fen={fen}
             orientation={orientation}
             white={whiteP}
@@ -341,24 +350,29 @@ export default function App() {
             arrow={arrow}
             whiteShare={whiteShare}
             evalText={evalText}
+            onStep={inReview && !retry ? (direction) => go(ply + direction) : undefined}
             colors={BOARD_THEMES[settings.theme]}
-          />
+          />}
         </section>
 
         <aside className="panel">
           <div className="panel-head">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden className="head-icon">
-              <path d="M12 2l2.9 6.9 7.1.6-5.4 4.7 1.7 7.1L12 17.6 5.7 21.3l1.7-7.1L2 9.5l7.1-.6z" fill="currentColor" />
+              <path d="M4 4h16v16H4zM8 16v-4m4 4V8m4 8v-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span>{stage === 'import' ? 'Review a game' : 'Game Review'}</span>
+            <span className="panel-title">{stage === 'import' ? 'Review a game' : 'Game Review'}</span>
+            <HelpMenu kind="labels" />
             {review && stage !== 'import' && (
-              <div className="seg" role="group" aria-label="Evaluation mode">
-                <button type="button" className={mode === 'chances' ? 'on' : ''} onClick={() => setMode('chances')} title="Expected points at these players' level">
-                  Chances
-                </button>
-                <button type="button" className={mode === 'engine' ? 'on' : ''} onClick={() => setMode('engine')} title="Raw Stockfish evaluation">
-                  Engine
-                </button>
+              <div className="evaluation-mode">
+                <div className="seg" role="group" aria-label="Evaluation mode">
+                  <button type="button" aria-pressed={mode === 'chances'} className={mode === 'chances' ? 'on' : ''} onClick={() => setMode('chances')} title="Expected points at these players' level">
+                    Chances
+                  </button>
+                  <button type="button" aria-pressed={mode === 'engine'} className={mode === 'engine' ? 'on' : ''} onClick={() => setMode('engine')} title="Raw Stockfish evaluation">
+                    Engine
+                  </button>
+                </div>
+                <InfoTip label="Chances vs Engine">{MODE_HELP}</InfoTip>
               </div>
             )}
           </div>
@@ -381,11 +395,15 @@ export default function App() {
             <div className="panel-body analyzing">
               <div className="spinner" aria-hidden />
               <div className="an-title">Analyzing game…</div>
-              <div className="progress">
+              <div className="progress" role="progressbar" aria-label="Game analysis" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.total ? Math.round(progress.done / progress.total * 100) : undefined}>
                 <div style={{ width: progress.total ? `${(progress.done / progress.total) * 100}%` : '4%' }} />
               </div>
-              <div className="muted">
-                {progress.total ? `Position ${progress.done} of ${progress.total}` : 'Starting Stockfish…'}
+              <div className="analysis-status" role="status">
+                <strong>{progress.total ? `${Math.round(progress.done / progress.total * 100)}%` : 'Starting Stockfish…'}</strong>
+                {progress.total > 1 && <span>Analyzing move {Math.max(1, progress.done - 1)} of {progress.total - 1}</span>}
+                <span className="muted">{progress.done > 1 && progress.elapsed > 0
+                  ? `About ${Math.max(1, Math.ceil((progress.total - progress.done) * progress.elapsed / progress.done / 60))} min left`
+                  : 'Estimating time remaining…'}</span>
               </div>
               <button type="button" className="btn btn-ghost" onClick={() => { abort.current?.abort(); setStage('import') }}>
                 Cancel
@@ -432,9 +450,7 @@ export default function App() {
                 </Coach>
               ) : (
                 <Coach text={move ? moveCoach(review, move) : startCoach(review)} label={move?.ep_label} ai={move ? notes[move.ply] ?? null : null}>
-                  {canRetry && (
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => startRetry(ply)}>Retry</button>
-                  )}
+                  <button type="button" data-tour="retry" className="btn btn-primary btn-sm" disabled={!canRetry} onClick={() => startRetry(ply)}>Retry</button>
                   {myMistakes.length > 0 && (
                     <button type="button" className="btn btn-ghost btn-sm" onClick={nextMistake} title={`Your mistakes as ${me}`}>
                       Next mistake
@@ -447,8 +463,8 @@ export default function App() {
                   )}
                 </Coach>
               )}
-              <div className="graph-wrap">
-                <Graph values={graphValues} current={ply} markers={markers} onSelect={go} />
+              <div className="graph-wrap" data-tour="graph">
+                <Graph values={graphValues} moves={review.moves} chances={review.positions.map((p) => p.white_ep)} current={ply} markers={markers} onSelect={go} />
               </div>
               <MoveList moves={review.moves} current={ply} onSelect={go} />
               <Controls
@@ -459,9 +475,12 @@ export default function App() {
                 onTogglePlay={() => setPlaying((p) => !p)}
                 onFlip={flip}
                 playing={playing}
+                atStart={ply === 0}
+                atEnd={ply === total}
+                retrying={!!retry}
               />
               <div className="panel-actions two">
-                <button type="button" className="btn btn-ghost" onClick={() => { setRetry(null); setStage('summary') }}>
+                <button type="button" className="btn btn-ghost" onClick={() => { setRetry(null); setPlaying(false); setStage('summary') }}>
                   Summary
                 </button>
                 <button
@@ -477,6 +496,10 @@ export default function App() {
           )}
         </aside>
       </main>
+      {inReview && !retry && <ReviewTour onShowRetry={() => {
+        const first = review.moves.find((m) => RETRY_LABELS.includes(m.ep_label))
+        if (first) go(first.ply)
+      }} />}
     </div>
   )
 }

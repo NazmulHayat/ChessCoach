@@ -13,7 +13,13 @@ export function MoveList({ moves, current, onSelect }: Props) {
 
   useEffect(() => {
     const el = box.current?.querySelector<HTMLElement>('.move-cell.current')
-    el?.scrollIntoView({ block: 'nearest' })
+    const list = box.current
+    if (el && list) {
+      const cellRect = el.getBoundingClientRect()
+      const listRect = list.getBoundingClientRect()
+      if (cellRect.top < listRect.top) list.scrollTop -= listRect.top - cellRect.top
+      else if (cellRect.bottom > listRect.bottom) list.scrollTop += cellRect.bottom - listRect.bottom
+    }
   }, [current])
 
   const rows: [ReviewMove, ReviewMove | undefined][] = []
@@ -24,7 +30,7 @@ export function MoveList({ moves, current, onSelect }: Props) {
 
   const cell = (m: ReviewMove | undefined) =>
     m ? (
-      <button type="button" data-ply={m.ply} className={`move-cell ${m.ply === current ? 'current' : ''}`} onClick={() => onSelect(m.ply)}>
+      <button type="button" aria-current={m.ply === current ? 'step' : undefined} aria-label={`${m.move_number}${m.mover === 'white' ? '.' : '...'} ${m.san}`} data-ply={m.ply} className={`move-cell ${m.ply === current ? 'current' : ''}`} onClick={() => onSelect(m.ply)}>
         <LabelIcon label={m.ep_label} size={16} />
         <span>{m.san}</span>
       </button>
@@ -33,7 +39,7 @@ export function MoveList({ moves, current, onSelect }: Props) {
     )
 
   return (
-    <div className="move-list" ref={box}>
+    <div className="move-list" data-tour="moves" ref={box}>
       {rows.map(([w, b]) => (
         <div className="move-row" key={w.ply}>
           <span className="move-num">{w.move_number}.</span>
