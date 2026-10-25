@@ -40,11 +40,19 @@ from ep_model.phase_a.rowgen import (
 from ep_model.phase_b.augment_evals import load_policy
 from ep_model.phase_c.evaluate import lichess_expected
 from ep_model.phase_c.prepare import cp_or_mate_proxy
-from ep_model.phase_d.predictor import EPModel
+from ep_model.phase_d.predictor import EPModel, board_model_dir
 from ep_model.phase_d.accuracy import combine, ep_move_weights, move_accuracy_pct
 from ep_model.phase_d.rating_estimate import estimate_rating, phase_grade, phase_of
 from ep_model.phase_d.ratings import detect_pool, from_lichess_scale, to_lichess_scale
-from ep_model.phase_d.special import is_brilliant, is_great, is_miss, sacrifice_points, sacrificed_piece, thresholds_for
+from ep_model.phase_d.special import (
+    is_brilliant,
+    is_great,
+    is_miss,
+    sacrifice_points,
+    sacrificed_piece,
+    takes_hanging_material,
+    thresholds_for,
+)
 from ep_model.phase_d.tactics import tactic_hint
 
 LOG = logging.getLogger(__name__)
@@ -158,10 +166,14 @@ def review_game(
     book_path: Path | None = DEFAULT_BOOK,
     progress: Callable[[int, int], None] | None = None,
     keep_rows: bool = False,
+    chances_model: EPModel | None = None,
 ) -> dict[str, Any]:
     """
     Full review: per-move labels, summary, display series. keep_rows=True adds "_rows" (the model rows per
     position), which score_attempt needs to judge a move tried in retry mode; strip it before sending.
+
+    `model` judges the moves (labels, accuracy): the board-only model. `chances_model` (default: `model`) is
+    the clock-aware model behind the Chances bar and graph, i.e. who is likely to win, time included.
     """
     h = game.headers
     w_elo_raw = _elo(h, "WhiteElo", white_elo)
@@ -231,23 +243,35 @@ def review_game(
         pos["second_san"] = b.san(second) if second else None
         pos["second_cp_stm"], pos["second_mate_stm"] = ev.get("second_cp_stm"), ev.get("second_mate_stm")
 
+    chances_model = chances_model or model
     ep = model.predict_rows(positions)
     ep_mirror = model.predict_rows([mirrored_row(p) for p in positions])
-    for pos, e, em in zip(positions, ep, ep_mirror):
+    if chances_model is model:
+        ch, ch_mirror = ep, ep_mirror
+    else:
+        ch = chances_model.predict_rows(positions)
+        ch_mirror = chances_model.predict_rows([mirrored_row(p) for p in positions])
+
+    def white_view(pos: dict[str, Any], e: float, em: float) -> float:
+        # Average of the side-to-move view and the mirrored view, so the curve doesn't zig-zag with
+        # whoever happens to be on move.
+        if pos["terminal"] is not None:
+            return pos["terminal"] if pos["side_to_move"] == "w" else 1.0 - pos["terminal"]
+        stm = float(e) if pos["side_to_move"] == "w" else 1.0 - float(e)
+        mirror = 1.0 - float(em) if pos["side_to_move"] == "w" else float(em)
+        return 0.5 * (stm + mirror)
+
+    for pos, e, em, c, cm in zip(positions, ep, ep_mirror, ch, ch_mirror):
         cp = cp_or_mate_proxy(pos["eval_cp_stm"], pos["mate_stm"])
         pos["cp_stm"] = cp
         if pos["terminal"] is not None:
             pos["ep_stm"] = pos["lichess_stm"] = pos["terminal"]
-            stm_white = pos["side_to_move"] == "w"
-            pos["white_ep_display"] = pos["terminal"] if stm_white else 1.0 - pos["terminal"]
         else:
             pos["ep_stm"] = float(e)
             pos["lichess_stm"] = float(lichess_expected(cp))
-            # Display value (eval bar, graph): average of the side-to-move view and the mirrored view,
-            # so the curve doesn't zig-zag with whoever happens to be on move.
-            white_view = float(e) if pos["side_to_move"] == "w" else 1.0 - float(e)
-            mirror_white_view = 1.0 - float(em) if pos["side_to_move"] == "w" else float(em)
-            pos["white_ep_display"] = 0.5 * (white_view + mirror_white_view)
+        pos["white_ep_judge"] = white_view(pos, e, em)
+        # Display value (eval bar, graph): the clock-aware chances.
+        pos["white_ep_display"] = white_view(pos, c, cm)
 
     best_rows = [best_move_row(positions[i], positions[i + 1]) for i in range(len(nodes))]
     best_ep = model.predict_rows(best_rows)
@@ -308,7 +332,15 @@ def review_game(
                 if is_brilliant(ep_loss, ep_after, alt, mover_elo, sac):
                     special = "brilliant"
                     sac_piece = sacrificed_piece(board_before, mv)
-                elif is_great(is_best, ep_best, ep_second, mover_elo, legal_count, is_recapture, board.is_checkmate()):
+                elif is_great(
+                    is_best,
+                    ep_best,
+                    ep_second,
+                    mover_elo,
+                    legal_count,
+                    is_recapture or takes_hanging_material(board_before, mv),
+                    board.is_checkmate(),
+                ):
                     special = "great"
                 elif prev is not None and is_miss(
                     is_best, ep_loss, ep_after, prev["ep_loss"], 1.0 - prev["ep_best"]
@@ -363,7 +395,7 @@ def review_game(
             book.close()
 
     # Lichess's aggregation (volatility-weighted mean + harmonic mean), on our expected-points losses.
-    weights = ep_move_weights([p["white_ep_display"] for p in positions])
+    weights = ep_move_weights([p["white_ep_judge"] for p in positions])
     for m, w in zip(moves, weights):
         m["weight"] = w
 
@@ -525,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
 
     policy = load_policy(args.policy)
     depth = args.depth or int(policy["depth"])
-    model = EPModel(args.model_dir)
+    model = EPModel(args.model_dir or board_model_dir())
     with EnginePool(
         policy.get("stockfish_path", "stockfish"),
         workers=args.workers,

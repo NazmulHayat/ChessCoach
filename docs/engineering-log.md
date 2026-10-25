@@ -16,6 +16,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-10-25 | Pretrain on 25M harvested rows (2× data): not significantly better than the shipped 12M model, so not shipped. |
 | 2026-10-25 | Phase B continuous queue (measured +2%), Dockerfile (Stockfish 18 compiled in), Fly.io / Render configs, request limits. Label frequencies on 200 real games. |
 | 2026-10-25 | Independent validation (Lichess puzzles, Lichess's own move verdicts, repeatability); fixes: Lichess accuracy formula, Chess.com-style performance rating, deterministic engine jobs. |
+| 2026-10-25 | User-reported bullet game exposed clock-driven labels. Built a fixed benchmark (Lichess, Chess.com, puzzles, known cases; per time class); split the chances model from a board-only move-judging model chosen on it. "Played like" game rating in the UI. |
 
 ## Key numbers
 
@@ -44,7 +45,9 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | Phase B dispatch | continuous queue vs 256-row chunks: 8.91 → 9.09 positions/s (+2%, within run-to-run noise), 768 positions, 8 engines |
 | Docker image | 1.16 GB (Python 3.12 slim + Stockfish 18 built from source + model); full 13-move review in 11.6 s with 2 engines |
 | multipv=2 cost | 0.414 → 0.605 s/position at depth 17 (+46%); top-line eval drift median 7.5 cp, p90 27 cp (120 positions) |
-| Tests | 52 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
+| Benchmark | 150 Lichess + 300 Chess.com games, 300 puzzles, 64 known cases; Stockfish cached per position, a model scores in ~1 min |
+| Move-judging model vs clock model (benchmark) | Lichess blunders called mistake+ 64.7% → 79.4%; our blunders confirmed by Lichess 95.3% → 100%; error count vs Lichess 0.81 → 1.02; known cases 65.6% → 100% |
+| Tests | 60 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
 
 ## Problems solved
 
@@ -65,6 +68,10 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 15. **Accuracy was inflated.** A plain average of per-move accuracy showed 99.7 for a game with mistakes. Switched to Lichess's published method (volatility-weighted mean + harmonic mean) and checked it against the accuracy Lichess shows on 381 real games from its API: within 0.32 points on average. Matching it exposed an undocumented detail: Lichess floors each move at 1 in the harmonic mean (with ~0, one game was off by 15 points).
 16. **"Game rating" regressed everyone to the average.** The first model minimised error against the player's rating, which is the least-wrong guess but useless as "you played like X" (a 99.7-accuracy game by a ~1900 player came out ~1500). Inverting it ("which rating plays like this?") swung far too wide (blitz MAE 430 vs 362 for guessing the median). Final version follows Chess.com's description: start from your rating and move it by how much better or worse you played than players at your rating, scaled by how much one game can tell (Elo's 200-point single-game spread). Validated by outcome: 63.5% vs 37.9% mean score for players rated above vs below their rating in that game.
 17. **Same game, different labels.** A re-review kept the same label on only 78.2% of moves: each Stockfish process carried hash and history from earlier positions, so results depended on thread scheduling. Clearing the engine before every position made it 100%, at about 5% more time (22.3 → 23.6 s per game, 4 engines). A first measurement suggested 2× slower; it had run alongside other jobs, and a clean A/B on the same 8 games showed the real cost.
+
+18. **The model judged moves by the clock.** A user's 1+0 bullet game showed 0 blunders and 94% accuracy; Lichess found 2 blunders and 81%. Giving away a queen for a rook cost 2.5% "chances" and was labelled good. Not a data bug (evals line up: mate-in-1 positions score 96%); the clock-aware model was right that 1+0 games are decided by the clock (1.5–4 pawns up with ~24 s each scores 51% in Lichess data). Fix: keep that model for the chances bar, judge moves with a board-only model (no clock features, monotone in eval, rapid / classical games). Same game: accuracy 96.5 / 94.0 → 90.2 / 81.4 vs Lichess's 91 / 81.
+19. **No standard to catch it.** Every earlier check was a one-off script averaged over all time controls, so a bullet-only failure stayed hidden. Built a fixed benchmark with targets, per time class: frozen Lichess games (recent, outside the training month), Chess.com games with Chess.com's accuracy, puzzles, and known cases including traps replayed with either side nearly flagging. Engine results cached per position, so comparing models takes a minute instead of an hour. The old model failed 22 of 64 known cases; the shipped one fails none.
+20. **"Great" for taking a free piece.** The Great rule excluded recaptures but not capturing a hanging piece (Qxg5 after Bg5?? was "Great"). Now any capture of the most material available by static exchange (≥ 2 points) is just Best. Found by the known-case set.
 
 ## Product
 

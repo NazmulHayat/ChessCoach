@@ -29,10 +29,11 @@ function GradeCell({ g }: { g: PhaseGrade | null }) {
 
 function GameRating({ est, rating }: { est: Review['summary']['white']['estimated_rating']; rating: number }) {
   if (!est) return <span className="gr-val">–</span>
-  const diff = est.rating - rating
+  // "Played like": the rating of players who typically play this well, as Chess.com's game rating does.
+  const diff = est.plays_like - rating
   return (
-    <span className="gr-val" title={`Range ${est.low}–${est.high}`}>
-      {est.rating}
+    <span className="gr-val" title={`Played like a ${est.plays_like}. Your rating: ${rating}.`}>
+      {est.plays_like}
       <span className={`gr-diff ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}`}>{diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '±0'}</span>
     </span>
   )
@@ -70,7 +71,7 @@ export function Summary({ review, coach, graphValues, onStart, onJump }: Props) 
       {(review.summary.white.estimated_rating || review.summary.black.estimated_rating) && (
         <div
           className="game-rating"
-          title="How you played compared with players at your rating: your rating moved up or down by how much better or worse your moves were than theirs typically are. One game is a small sample, so it moves less in fast games."
+          title="The rating of players who typically play as well as you did in this game, judged by how much each move gave away. The small number is the difference from your actual rating."
         >
           <GameRating est={review.summary.white.estimated_rating} rating={review.white_elo} />
           <span className="gr-mid">Game rating</span>

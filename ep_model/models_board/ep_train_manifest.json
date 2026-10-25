@@ -1,0 +1,177 @@
+{
+  "created_utc": "2026-10-25T08:47:01.733585+00:00",
+  "n_rows": 7561541,
+  "n_games": 1518622,
+  "val_fraction": 0.15,
+  "seed": 42,
+  "feature_names": [
+    "cp_stm_proxy",
+    "elo_to_move",
+    "elo_opponent",
+    "elo_diff",
+    "ply",
+    "move_number",
+    "side_w",
+    "phase",
+    "rating_band"
+  ],
+  "categorical_features": [
+    "phase",
+    "rating_band"
+  ],
+  "target": "result_stm",
+  "lgbm_params": {
+    "objective": "cross_entropy",
+    "metric": [
+      "cross_entropy",
+      "l2"
+    ],
+    "first_metric_only": true,
+    "seed": 42,
+    "num_leaves": 127,
+    "learning_rate": 0.05,
+    "feature_fraction": 0.9,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "min_data_in_leaf": 2000,
+    "monotone_constraints": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "clock_dropout": 0.0,
+  "board_only": true,
+  "time_classes": [
+    "rapid",
+    "classical"
+  ],
+  "best_iteration": 228,
+  "val_metrics": {
+    "mae": 0.37232071293761965,
+    "rmse": 0.4286778380865013,
+    "brier_clipped": 0.1837646888665166,
+    "log_loss": 0.5641327020176963
+  },
+  "val_metrics_by_rating_band": {
+    "1800-2000": {
+      "mae": 0.3684676680169975,
+      "rmse": 0.42536934754521327,
+      "brier_clipped": 0.18093908183104043,
+      "log_loss": 0.5643490660563388
+    },
+    "1600-1800": {
+      "mae": 0.37680413166434307,
+      "rmse": 0.43163639970256457,
+      "brier_clipped": 0.18630998154819206,
+      "log_loss": 0.5717034466235995
+    },
+    "1400-1600": {
+      "mae": 0.3755730622401763,
+      "rmse": 0.43079997809321613,
+      "brier_clipped": 0.1855886211251155,
+      "log_loss": 0.563699711742196
+    },
+    "1200-1400": {
+      "mae": 0.3787103764576025,
+      "rmse": 0.43248486959555366,
+      "brier_clipped": 0.18704316242908306,
+      "log_loss": 0.5657617992201888
+    },
+    "0-1000": {
+      "mae": 0.3673587297030602,
+      "rmse": 0.4282955056085748,
+      "brier_clipped": 0.18343704012450476,
+      "log_loss": 0.5573736733122332
+    },
+    "1000-1200": {
+      "mae": 0.3772290002397943,
+      "rmse": 0.43248347643623586,
+      "brier_clipped": 0.18704195739037216,
+      "log_loss": 0.5652173185700722
+    },
+    "2000-3000": {
+      "mae": 0.35220147437244426,
+      "rmse": 0.4132310264466112,
+      "brier_clipped": 0.17075988121811989,
+      "log_loss": 0.5541573667468837
+    },
+    "2000+": {
+      "mae": 0.34234323920744025,
+      "rmse": 0.3490101442370718,
+      "brier_clipped": 0.12180808078038163,
+      "log_loss": 0.4247063773253531
+    }
+  },
+  "train_time_sec": 132.99403874995187,
+  "input_files": [
+    "rows_lichess_part00000.parquet",
+    "rows_lichess_part00001.parquet",
+    "rows_lichess_part00002.parquet",
+    "rows_lichess_part00003.parquet",
+    "rows_lichess_part00004.parquet",
+    "rows_lichess_part00005.parquet",
+    "rows_lichess_part00006.parquet",
+    "rows_lichess_part00007.parquet",
+    "rows_lichess_part00008.parquet",
+    "rows_lichess_part00009.parquet",
+    "rows_lichess_part00010.parquet",
+    "rows_lichess_part00011.parquet",
+    "rows_lichess_part00012.parquet",
+    "rows_lichess_part00013.parquet",
+    "rows_lichess_part00014.parquet",
+    "rows_lichess_part00015.parquet",
+    "rows_lichess_part00016.parquet",
+    "rows_lichess_part00017.parquet",
+    "rows_lichess_part00018.parquet",
+    "rows_lichess_part00019.parquet",
+    "rows_lichess_part00020.parquet",
+    "rows_lichess_part00021.parquet",
+    "rows_lichess_part00022.parquet",
+    "rows_lichess_part00023.parquet",
+    "rows_lichess_part00024.parquet",
+    "rows_lichess_part00025.parquet",
+    "rows_lichess_part00026.parquet",
+    "rows_lichess_part00027.parquet",
+    "rows_lichess_part00028.parquet",
+    "rows_lichess_part00029.parquet",
+    "rows_lichess_part00030.parquet",
+    "rows_lichess_part00031.parquet",
+    "rows_lichess_part00032.parquet",
+    "rows_lichess_part00033.parquet",
+    "rows_lichess_part00034.parquet",
+    "rows_lichess_part00035.parquet",
+    "rows_lichess_part00036.parquet",
+    "rows_lichess_part00037.parquet",
+    "rows_lichess_part00038.parquet",
+    "rows_lichess_part00039.parquet",
+    "rows_lichess_part00040.parquet",
+    "rows_lichess_part00041.parquet",
+    "rows_lichess_part00042.parquet",
+    "rows_lichess_part00043.parquet",
+    "rows_lichess_part00044.parquet",
+    "rows_lichess_part00045.parquet"
+  ],
+  "input_dir": "ep_model/processed_lichess",
+  "engine_policy_path": "/Users/nazmulhayat/Desktop/Programming/ChessCoach/ep_model/config/engine_policy.json",
+  "finetune": {
+    "base_model_dir": "ep_model/models_board_rapid_lichess",
+    "base_trees": 228,
+    "added_trees": 54,
+    "learning_rate": 0.03,
+    "fit_rows": 22659,
+    "stop_rows": 4003,
+    "stop_metrics": {
+      "mae": 0.37738669978147815,
+      "rmse": 0.4340905272739969,
+      "brier_clipped": 0.18843458586901665,
+      "log_loss": 0.5920780855886854
+    }
+  }
+}

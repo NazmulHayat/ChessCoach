@@ -6,12 +6,16 @@ Independent checks of the review, against references we didn't produce.
            on the real app path.
   accuracy Our copy of Lichess's accuracy formula vs the accuracy Lichess itself shows, on real analysed
            games from the public API (same engine evals in, so the numbers should match).
+  compare  Same Lichess-analysed games through two judging models (default: board-only vs clock-aware), split
+           by time class: agreement with Lichess's verdicts, error counts per player, and game accuracy vs
+           Lichess's accuracy formula on Lichess's own evals.
   puzzles  Lichess puzzles: each starts with a real blunder and has one winning answer. We should call the
            blunder an error, the answer best / great, and the tactic hint should match the puzzle theme.
 
 Usage (repo root):
   python -m ep_model.scripts.validate_review puzzles --n 300
   python -m ep_model.scripts.validate_review lichess --games 100 --repeat 20
+  python -m ep_model.scripts.validate_review compare --per-class 50
 Reports go to ep_model/models/validation_*.json (and are printed).
 """
 
@@ -34,9 +38,10 @@ import chess
 import chess.pgn
 
 from ep_model.phase_a.generate_rows import stream_games
+from ep_model.phase_a.rowgen import classify_time_class, parse_time_control
 from ep_model.phase_d.accuracy import lichess_game_accuracy
 from ep_model.phase_d.engine_pool import EnginePool
-from ep_model.phase_d.predictor import EPModel
+from ep_model.phase_d.predictor import EPModel, board_model_dir
 from ep_model.phase_d.review import review_game
 
 LOG = logging.getLogger(__name__)
@@ -55,12 +60,12 @@ def pct(a: int, b: int) -> float | None:
     return round(100.0 * a / b, 1) if b else None
 
 
-def make_reviewer(workers: int, depth: int):
-    model = EPModel()
+def make_reviewer(workers: int, depth: int, model: EPModel | None = None):
+    model = model or EPModel(board_model_dir())
     pool = EnginePool(workers=workers)
 
-    def run(game: chess.pgn.Game, **kw):
-        return review_game(game, model, lambda fens, prog: pool.analyse(fens, depth, prog), depth, **kw)
+    def run(game: chess.pgn.Game, judge: EPModel | None = None, **kw):
+        return review_game(game, judge or model, lambda fens, prog: pool.analyse(fens, depth, prog), depth, **kw)
 
     return run, pool
 
@@ -268,6 +273,82 @@ def run_lichess(args) -> dict:
     }
 
 
+def sample_by_time_class(path: Path, per_class: int, keep_prob: float, seed: int) -> dict[str, list[chess.pgn.Game]]:
+    """Lichess-analysed games, `per_class` each of bullet / blitz / rapid."""
+    rng = random.Random(seed)
+    out: dict[str, list[chess.pgn.Game]] = {"bullet": [], "blitz": [], "rapid": []}
+    for game in stream_games(path):
+        h = game.headers
+        if h.get("TimeControl", "-") == "-" or not h.get("WhiteElo", "").isdigit() or not h.get("BlackElo", "").isdigit():
+            continue
+        tc = classify_time_class(parse_time_control(h["TimeControl"])[0])
+        if tc not in out or len(out[tc]) >= per_class or rng.random() > keep_prob:
+            continue
+        nodes = list(game.mainline())
+        if len(nodes) < 20 or "%eval" not in (nodes[0].comment or ""):
+            continue
+        out[tc].append(game)
+        if all(len(v) >= per_class for v in out.values()):
+            break
+    return out
+
+
+def run_compare(args) -> dict:
+    models = {"board": EPModel(board_model_dir()), "clock": EPModel(Path(args.other_model) if args.other_model else None)}
+    by_tc = sample_by_time_class(args.dump, args.per_class, args.keep_prob, args.seed)
+    LOG.info("Sampled %s", {k: len(v) for k, v in by_tc.items()})
+    review, pool = make_reviewer(args.workers, args.depth, models["board"])
+    report: dict = {"depth": args.depth, "games": {k: len(v) for k, v in by_tc.items()}}
+    t0 = time.time()
+    try:
+        for tc, games in by_tc.items():
+            pairs = {name: [] for name in models}
+            counts = {name: Counter() for name in models}
+            acc_diff = {name: [] for name in models}
+            li_counts: Counter = Counter()
+            players = 0
+            for gi, game in enumerate(games):
+                nags = [node.nags for node in game.mainline()]
+                cps = _cps_from_pgn(str(game))
+                li_acc = lichess_game_accuracy(cps) if cps else None
+                for side in ("white", "black"):
+                    players += 1
+                    for k, ns in enumerate(nags):
+                        if (k % 2 == 0) == (side == "white"):
+                            v = next((NAG_LABEL[n] for n in ns if n in NAG_LABEL), None)
+                            if v:
+                                li_counts[v] += 1
+                for name, model in models.items():
+                    r = review(game, judge=model)  # engine evals are cached after the first model
+                    for m, ns in zip(r["moves"], nags):
+                        if m["ep_label"] != "book":
+                            pairs[name].append((next((NAG_LABEL[n] for n in ns if n in NAG_LABEL), "none"), m["ep_label"]))
+                        if m["ep_label"] in ERRORS:
+                            counts[name][m["ep_label"]] += 1
+                    if li_acc:
+                        for side in ("white", "black"):
+                            if li_acc[side] is not None:
+                                acc_diff[name].append(r["summary"][side]["accuracy"] - li_acc[side])
+                if (gi + 1) % 10 == 0:
+                    LOG.info("%s %d/%d, %.0fs", tc, gi + 1, len(games), time.time() - t0)
+            report[tc] = {
+                "lichess_errors_per_player": {k: round(v / players, 2) for k, v in sorted(li_counts.items())},
+                **{
+                    name: {
+                        "errors_per_player": {k: round(v / players, 2) for k, v in sorted(counts[name].items())},
+                        "accuracy_mean_diff_vs_lichess": round(statistics.mean(acc_diff[name]), 2) if acc_diff[name] else None,
+                        "accuracy_mean_abs_diff_vs_lichess": round(statistics.mean(map(abs, acc_diff[name])), 2) if acc_diff[name] else None,
+                        **confusion(pairs[name]),
+                    }
+                    for name in models
+                },
+            }
+    finally:
+        pool.close()
+    report["seconds"] = round(time.time() - t0, 1)
+    return report
+
+
 # ---------- accuracy formula vs Lichess ----------
 
 LICHESS_HEADERS = {"Accept": "application/x-ndjson", "User-Agent": "ChessCoach/0.1 (accuracy validation)"}
@@ -356,13 +437,18 @@ def main(argv: list[str] | None = None) -> int:
     li.add_argument("--repeat", type=int, default=20, help="Re-review this many games to measure stability")
     li.add_argument("--keep-prob", type=float, default=0.05)
     li.add_argument("--dump", type=Path, default=REPO / "ep_model" / "raw" / "lichess_db_standard_rated_2026-02.pgn.zst")
-    for s in (pz, li, ac):
+    cp_ = sub.add_parser("compare")
+    cp_.add_argument("--per-class", type=int, default=50, help="Games per time class (bullet, blitz, rapid)")
+    cp_.add_argument("--keep-prob", type=float, default=0.05)
+    cp_.add_argument("--other-model", default=None, help="Model dir to compare against (default: the clock-aware app model)")
+    cp_.add_argument("--dump", type=Path, default=REPO / "ep_model" / "raw" / "lichess_db_standard_rated_2026-02.pgn.zst")
+    for s in (pz, li, ac, cp_):
         s.add_argument("--depth", type=int, default=17)
         s.add_argument("--workers", type=int, default=8)
         s.add_argument("--seed", type=int, default=11)
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    report = {"puzzles": run_puzzles, "lichess": run_lichess, "accuracy": run_accuracy}[args.cmd](args)
+    report = {"puzzles": run_puzzles, "lichess": run_lichess, "accuracy": run_accuracy, "compare": run_compare}[args.cmd](args)
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"validation_{args.cmd}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))

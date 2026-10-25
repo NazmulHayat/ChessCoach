@@ -46,7 +46,7 @@ from ep_model.phase_a.rowgen import classify_time_class, parse_time_control
 from ep_model.phase_b.augment_evals import load_policy
 from ep_model.phase_d import explain
 from ep_model.phase_d.engine_pool import EnginePool
-from ep_model.phase_d.predictor import EPModel
+from ep_model.phase_d.predictor import EPModel, board_model_dir
 from ep_model.phase_d.review import review_game, score_attempt
 
 LOG = logging.getLogger(__name__)
@@ -128,7 +128,8 @@ def _remember_review(result: dict[str, Any]) -> str:
 async def lifespan(app: FastAPI):
     policy = load_policy(CONFIG["policy"])
     STATE["depth"] = CONFIG["depth"] or int(policy["depth"])
-    STATE["model"] = EPModel()
+    STATE["model"] = EPModel()  # clock-aware chances (eval bar, graph)
+    STATE["board_model"] = EPModel(board_model_dir())  # judges moves: labels, accuracy, retry
     STATE["pool"] = EnginePool(
         policy.get("stockfish_path", "stockfish"),
         workers=CONFIG["workers"],
@@ -211,7 +212,7 @@ async def review(req: ReviewRequest, request: Request) -> StreamingResponse:
         try:
             result = review_game(
                 game,
-                STATE["model"],
+                STATE["board_model"],
                 lambda fens, prog: STATE["pool"].analyse(fens, depth, prog),
                 depth,
                 white_elo,
@@ -219,6 +220,7 @@ async def review(req: ReviewRequest, request: Request) -> StreamingResponse:
                 req.rating_pool,
                 progress=progress,
                 keep_rows=True,
+                chances_model=STATE["model"],
             )
             result["review_id"] = _remember_review(result)
             loop.call_soon_threadsafe(events.put_nowait, ("result", result))
@@ -261,7 +263,7 @@ async def retry(req: RetryRequest) -> dict[str, Any]:
     depth = saved["depth"]
 
     def work() -> dict[str, Any]:
-        return score_attempt(saved["rows"], move, req.uci, STATE["model"], lambda fen: STATE["pool"].analyse_one(fen, depth))
+        return score_attempt(saved["rows"], move, req.uci, STATE["board_model"], lambda fen: STATE["pool"].analyse_one(fen, depth))
 
     try:
         return await asyncio.get_running_loop().run_in_executor(None, work)

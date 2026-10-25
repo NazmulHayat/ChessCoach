@@ -28,6 +28,7 @@ from ep_model.phase_c.prepare import (
     build_training_frame,
     load_eval_parquet,
     metrics_regression,
+    monotone_constraints,
     split_game_ids,
 )
 
@@ -41,6 +42,10 @@ def _repo_root() -> Path:
 def run(base_dir: Path, processed: Path, test_ids_path: Path, out_dir: Path, learning_rate: float, seed: int) -> int:
     paths = sorted(processed.glob("rows_with_eval_part*.parquet"))
     df, features, target = build_training_frame(load_eval_parquet(paths, columns=TRAIN_COLUMNS), copy=False)
+    with open(base_dir / "ep_train_manifest.json", encoding="utf-8") as f:
+        base_manifest = json.load(f)
+    if base_manifest.get("time_classes"):  # same data scope as the pretrained model
+        df = df[df["time_class"].astype(str).isin(base_manifest["time_classes"])]
     test_ids = set(test_ids_path.read_text(encoding="utf-8").split())
     rest = df[~df["game_id"].astype(str).isin(test_ids)]
     fit_ids, stop_ids = split_game_ids(rest["game_id"].astype(str).unique(), 0.15, seed)
@@ -49,6 +54,7 @@ def run(base_dir: Path, processed: Path, test_ids_path: Path, out_dir: Path, lea
     LOG.info("Fine-tune rows: fit=%s stop=%s (test games excluded: %s)", len(fit), len(stop), len(test_ids))
 
     base = lgb.Booster(model_file=str(base_dir / "ep_lgbm.txt"))
+    features = base.feature_name()  # the base model's features (all, or the board-only set)
     params = {
         "objective": "cross_entropy",
         "metric": "cross_entropy",
@@ -60,8 +66,10 @@ def run(base_dir: Path, processed: Path, test_ids_path: Path, out_dir: Path, lea
         "feature_fraction": 0.9,
         "bagging_fraction": 0.8,
         "bagging_freq": 5,
+        "monotone_constraints": monotone_constraints(features),
     }
-    d_fit = lgb.Dataset(fit[features], fit[target], categorical_feature=CATEGORICAL_FEATURES, free_raw_data=False)
+    cats = [c for c in CATEGORICAL_FEATURES if c in features]
+    d_fit = lgb.Dataset(fit[features], fit[target], categorical_feature=cats, free_raw_data=False)
     d_stop = lgb.Dataset(stop[features], stop[target], reference=d_fit, free_raw_data=False)
     booster = lgb.train(
         params, d_fit, num_boost_round=2000, valid_sets=[d_stop], init_model=base,
@@ -73,8 +81,6 @@ def run(base_dir: Path, processed: Path, test_ids_path: Path, out_dir: Path, lea
 
     out_dir.mkdir(parents=True, exist_ok=True)
     booster.save_model(str(out_dir / "ep_lgbm.txt"), num_iteration=booster.best_iteration)
-    with open(base_dir / "ep_train_manifest.json", encoding="utf-8") as f:
-        base_manifest = json.load(f)
     manifest = {
         **base_manifest,
         "created_utc": datetime.now(timezone.utc).isoformat(),

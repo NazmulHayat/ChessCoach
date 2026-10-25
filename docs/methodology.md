@@ -50,6 +50,15 @@ Every model is also compared to the clean-only EP model with a **paired bootstra
 
 Baseline 4 is the important comparison: the gap between it and the EP model is the value of the context features, with model capacity held equal. The report also breaks results down by rating band and time class and includes a calibration table.
 
+## Two models: who will win vs how good was the move
+
+The app uses two EP models, trained the same way on the same data:
+
+- **Chances model** (`models_finetuned`, all features including clocks): who is likely to win from here. Drives the eval bar and graph.
+- **Move-judging model** (`models_board`, `--board-only`): no clock or time-control features, trained on rapid and classical games only, with the eval constrained to be monotone (a better eval never lowers the chances). Drives every label, accuracy input and retry verdict.
+
+Why two: a user's 1+0 bullet game ([lichess.org/nMuWq0F1](https://lichess.org/nMuWq0F1)) showed 0 blunders and 94% accuracy where Lichess found 2 blunders and 81%. The clock-aware model was right about outcomes: in Lichess 1+0 games with ~24 s each, being 1.5–4 pawns up scores only 51%, because the clock decides. But that made giving away a queen for a rook cost 2.5% and earn "good". A move should be judged on the board. Training on rapid / classical games only, where results follow the board, made the curve steeper; picked by the benchmark below (all 64 known cases pass, error counts match Lichess's within 2%).
+
 ## From EP to move labels
 
 For each move the review computes:
@@ -110,6 +119,8 @@ As Chess.com describes it: compare the quality of your moves with what players a
 
 **Two rejected versions.** (a) Predicting the rating directly (blitz MAE 292 vs 362 for always guessing the median) looked good on paper but pulled every game to the average: a 99.7-accuracy game by a ~1900 player came out at ~1500. (b) Showing "plays like" as is spread far too wide (blitz MAE 430, worse than guessing the median). The opponent's rating is never used. For Chess.com games the result is mapped back to the Chess.com scale.
 
+**What the app shows.** The summary shows **plays-like** ("played like a 1950"), with the difference from your rating, as Chess.com's game rating reads. Users found the shrunk number unhelpful in fast games (a bullet game moves it by only 9% of the gap, so it mostly echoed their rating). The trade-off is the wide spread noted in (b): one game says only so much. The shrunk estimate is still returned by the API (`rating`, `low`, `high`). On the benchmark, the player with the higher plays-like won 94.5% of decisive Lichess games (91% bullet, 92% blitz, 99.7% rapid).
+
 ### Accuracy
 
 Lichess's published method (`ep_model/phase_d/accuracy.py`): per-move accuracy from the drop in winning chances on Lichess's curve (+1 uncertainty bonus), then the average of a volatility-weighted mean (moves in sharp, swinging positions count more; weights are the SD of win% over a sliding window, clamped to 0.5–12) and a harmonic mean (each move floored at 1). A plain average hides one blunder among good moves; this doesn't.
@@ -119,6 +130,26 @@ Lichess's published method (`ep_model/phase_d/accuracy.py`): per-move accuracy f
 In the app the same aggregation runs on **expected-points loss** (best move vs move played, so rating and clock count), with weights from the volatility of white's chances. Phase grades use the same aggregation on the phase's moves: ≥ 95 best, ≥ 85 excellent, ≥ 75 good, ≥ 60 inaccuracy, ≥ 45 mistake, else blunder. Phases: **endgame** once at most 6 queens / rooks / bishops / knights remain; **opening** for the first 10 moves or while still in book; **middlegame** otherwise. Chess.com's CAPS formula is not public, so the numbers are not directly comparable to theirs.
 
 **Eval bar and graph** show white's EP averaged over the actual side-to-move view and a mirrored view of the same position, so the curve doesn't zig-zag with whoever is on move.
+
+## Benchmark
+
+A fixed scorecard, so every change is measured on the same games against targets (`python -m ep_model.benchmark.run score`, results in [`docs/benchmark.md`](benchmark.md)). The sets are frozen in `ep_model/benchmark/data`:
+
+- 150 recent Lichess games (50 bullet / blitz / rapid) from the public API, not from the training month, with Lichess's own per-move verdicts and accuracy.
+- 300 Chess.com games with Chess.com's own accuracy (public API; only reviewed games carry it), 20 per time class × rating bin.
+- 300 Lichess puzzles.
+- 64 known cases: textbook traps (hanging queen, mate in one, hanging bishop, missed free queen) at 800 / 1500 / 2200 and with either side nearly out of time in bullet, plus moves users reported.
+
+Stockfish runs once per position into a disk cache (engine cleared per position, so results are deterministic); scoring a new model then takes about a minute. Every metric is reported per time class, because the bullet bug was invisible in the overall average.
+
+| Model | Lichess blunders called mistake+ | Our blunders Lichess flags | Error count vs Lichess | Known cases |
+|---|---|---|---|---|
+| Chances model (clocks) judging moves | 64.7% | 95.3% | 0.81 | 65.6% |
+| Board-only, all games | 73.5% | 100% | 0.88 | 98.4% |
+| Board-only, no bullet | 78.5% | 100% | 0.95 | 98.4% |
+| **Board-only, rapid + classical (shipped)** | **79.4%** | **100%** | **1.02** | **100%** |
+
+The remaining gap to Lichess's blunders is the rating-aware design: we call 88% of Lichess blunders mistake-or-worse for 2000+ players but 75–77% below 1600, because lower-rated players often recover from the same eval drop (Lichess's formula on our own engine evals would catch 93–98% at every level). Kept on purpose, as Chess.com describes its system.
 
 ## Validation against independent references
 

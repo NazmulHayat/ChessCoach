@@ -21,3 +21,11 @@ ep_model/models
 ep_model/models_lichess
 lichess_db_*
 *.pgn.zst
+ep_model/models_board_lichess
+ep_model/models_lichess25
+ep_model/models_finetuned25
+ep_model/models_board_slow_lichess
+ep_model/benchmark
+ep_model/models_board_rapid_lichess
+ep_model/models_board_all
+ep_model/models_board_slow

@@ -24,6 +24,18 @@ def default_model_dir() -> Path:
     return finetuned if (finetuned / "ep_lgbm.txt").is_file() else base / "models"
 
 
+def board_model_dir() -> Path:
+    """
+    The board-only model that judges moves (labels, accuracy): $CHESSCOACH_BOARD_MODEL_DIR, else models_board,
+    else the main model. It has no clock features, so a move is judged by the position, not the time left.
+    """
+    env = os.environ.get("CHESSCOACH_BOARD_MODEL_DIR")
+    if env:
+        return Path(env)
+    board = Path(__file__).resolve().parents[1] / "models_board"
+    return board if (board / "ep_lgbm.txt").is_file() else default_model_dir()
+
+
 class EPModel:
     """
     Wraps ep_lgbm.txt + ep_train_manifest.json.

@@ -21,7 +21,7 @@ import chess.pgn
 
 from ep_model.phase_a.generate_rows import stream_games
 from ep_model.phase_d.engine_pool import EnginePool
-from ep_model.phase_d.predictor import EPModel
+from ep_model.phase_d.predictor import EPModel, board_model_dir
 from ep_model.phase_d.review import review_game
 
 LOG = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
 
     games = sample_games(args.dump, args.games, args.keep_prob, args.seed)
     LOG.info("Sampled %d games", len(games))
-    model = EPModel()
+    model = EPModel(board_model_dir())
     overall: Counter = Counter()
     by_band: dict[str, Counter] = defaultdict(Counter)
     per_game = []

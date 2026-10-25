@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from ep_model.phase_c.prepare import (
+    BOARD_FEATURE_NAMES,
     CATEGORICAL_FEATURES,
     TRAIN_COLUMNS,
     apply_clock_dropout,
@@ -31,6 +32,7 @@ from ep_model.phase_c.prepare import (
     metrics_by_rating_band,
     metrics_regression,
     split_by_game_id,
+    monotone_constraints,
     split_game_ids,
     unique_game_ids_from_parquets,
 )
@@ -56,6 +58,8 @@ def run(
     sharded_load: bool = False,
     clock_dropout: float = 0.15,
     num_leaves: int = 31,
+    board_only: bool = False,
+    time_classes: list[str] | None = None,
 ) -> int:
     if not input_paths:
         LOG.error("No input Parquet files (rows_with_eval_part*.parquet)")
@@ -81,8 +85,13 @@ def run(
         df = load_eval_parquet(input_paths, columns=TRAIN_COLUMNS, max_rows=max_rows, seed=seed)
         LOG.info("Loaded %s rows", len(df))
 
+    if time_classes:
+        df = df[df["time_class"].astype(str).isin(time_classes)]
+        LOG.info("Kept time classes %s: %s rows", time_classes, len(df))
     df = apply_clock_dropout(df, clock_dropout, seed, inplace=True)
     df, feature_names, target_col = build_training_frame(df, copy=False)
+    if board_only:
+        feature_names = list(BOARD_FEATURE_NAMES)
     LOG.info("Rows after filter: %s, games: %s", len(df), df["game_id"].nunique())
 
     if sharded_load and train_gids is not None and val_gids is not None:
@@ -129,6 +138,8 @@ def run(
         # Scales with data, capped so very large runs can still learn fine-grained structure.
         "min_data_in_leaf": max(5, min(len(train_df) // 500, 2000)),
     }
+    if board_only:
+        params["monotone_constraints"] = monotone_constraints(feature_names)
 
     t0 = time.perf_counter()
     evals_result: dict = {}
@@ -176,6 +187,8 @@ def run(
         "target": target_col,
         "lgbm_params": {k: v for k, v in params.items() if k != "verbosity"},
         "clock_dropout": clock_dropout,
+        "board_only": board_only,
+        "time_classes": time_classes,
         "best_iteration": int(booster.best_iteration),
         "val_metrics": m,
         "val_metrics_by_rating_band": by_band,
@@ -222,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
         default=0.15,
         help="Fraction of games trained with clocks blanked (teaches a clock-unknown mode)",
     )
+    p.add_argument("--board-only", action="store_true", help="No clock / time-control features (the move-label model)")
+    p.add_argument("--time-classes", nargs="+", default=None, help="Train only on these time classes (e.g. blitz rapid classical)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -241,6 +256,8 @@ def main(argv: list[str] | None = None) -> int:
         sharded_load=args.sharded_load,
         clock_dropout=args.clock_dropout,
         num_leaves=args.num_leaves,
+        board_only=args.board_only,
+        time_classes=args.time_classes,
     )
 
 

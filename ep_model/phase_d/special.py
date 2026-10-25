@@ -163,16 +163,24 @@ def is_great(
     ep_second: float | None,
     elo: float,
     legal_moves: int,
-    is_obvious_recapture: bool,
+    is_obvious_capture: bool,
     gives_mate: bool = False,
 ) -> bool:
-    """Forced moves, obvious recaptures and mate-in-one are just "best"."""
-    if not is_best or ep_second is None or legal_moves < 2 or is_obvious_recapture or gives_mate:
+    """Forced moves, obvious captures (recaptures, taking a hanging piece) and mate-in-one are just "best"."""
+    if not is_best or ep_second is None or legal_moves < 2 or is_obvious_capture or gives_mate:
         return False
     gap = ep_best - ep_second
     if gap >= thresholds_for(elo).great_gap:
         return True
     return gap >= GREAT_BAND_MIN_GAP and outcome_band(ep_best) > outcome_band(ep_second)
+
+
+def takes_hanging_material(board: chess.Board, move: chess.Move, min_gain: int = 2) -> bool:
+    """The move captures where the most material is simply there for the taking (SEE gain >= min_gain)."""
+    if not board.is_capture(move):
+        return False
+    gain, where = best_capture_gain(board)
+    return gain >= min_gain and move.to_square == where
 
 
 def is_miss(

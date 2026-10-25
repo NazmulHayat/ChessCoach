@@ -57,6 +57,17 @@ FEATURE_NAMES = [
 
 CATEGORICAL_FEATURES = ["phase", "time_class", "rating_band", "opening_eco"]
 
+# Board-only model, used for move labels, accuracy and game rating: it judges a move by the position and the
+# players, not the clock or the time control. With clocks, a 1+0 bullet model learns (correctly) that the clock
+# decides most games, so giving away a queen with equal clocks barely moved the chances and was labelled "good".
+BOARD_FEATURE_NAMES = ["cp_stm_proxy", "elo_to_move", "elo_opponent", "elo_diff", "ply", "move_number", "side_w", "phase", "rating_band"]
+# Better eval for the side to move never lowers its chances (without this the curve wobbled where data is thin).
+MONOTONE_INCREASING = {"cp_stm_proxy"}
+
+
+def monotone_constraints(feature_names: list[str]) -> list[int]:
+    return [1 if f in MONOTONE_INCREASING else 0 for f in feature_names]
+
 
 def add_model_features(df: pd.DataFrame, copy: bool = True) -> pd.DataFrame:
     """

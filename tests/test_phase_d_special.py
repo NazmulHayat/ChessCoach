@@ -67,7 +67,7 @@ def test_left_hanging_counts_only_when_it_could_be_saved():
 
 
 def test_great_only_move():
-    assert is_great(True, 0.55, 0.35, 1500, legal_moves=30, is_obvious_recapture=False)
+    assert is_great(True, 0.55, 0.35, 1500, legal_moves=30, is_obvious_capture=False)
     # Gap too small, same band.
     assert not is_great(True, 0.55, 0.50, 1500, 30, False)
     # Not the engine move, or a forced / obvious recapture.
@@ -103,3 +103,13 @@ def test_brilliant():
     # 0.025 loss: forgiven at 1000, not at 2200.
     assert is_brilliant(0.025, 0.6, 0.5, 1000, 3)
     assert not is_brilliant(0.025, 0.6, 0.5, 2200, 3)
+
+
+def test_taking_a_hanging_piece_is_not_great():
+    from ep_model.phase_d.special import takes_hanging_material
+
+    b = chess.Board()
+    for san in "d4 e5 dxe5 d6 exd6 Bxd6 Bg5".split():
+        b.push_san(san)
+    assert takes_hanging_material(b, b.parse_san("Qxg5"))
+    assert not takes_hanging_material(b, b.parse_san("Nf6"))
