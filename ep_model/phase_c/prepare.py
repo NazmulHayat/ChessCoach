@@ -58,12 +58,13 @@ FEATURE_NAMES = [
 CATEGORICAL_FEATURES = ["phase", "time_class", "rating_band", "opening_eco"]
 
 
-def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_model_features(df: pd.DataFrame, copy: bool = True) -> pd.DataFrame:
     """
     Derive model feature columns from Phase B-shaped rows (no filtering, no target needed).
-    Shared by training and inference so both see identical encodings.
+    Shared by training and inference so both see identical encodings. copy=False adds the
+    columns to `df` itself (training on large frames).
     """
-    out = df.copy()
+    out = df.copy() if copy else df
 
     out["cp_stm_proxy"] = cp_or_mate_proxy_vec(out["eval_cp_stm"], out["mate_stm"])
     out["cp_white_proxy"] = cp_or_mate_proxy_vec(out["eval_cp_white"], out["mate_white"])
@@ -90,7 +91,7 @@ def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("initial_time_sec", "increment_sec"):
         out[col] = out[col].fillna(-1).astype(np.int32)
 
-    out["opening_eco"] = out["opening_eco"].fillna("?").astype(str)
+    out["opening_eco"] = out["opening_eco"].astype(object).fillna("?").astype(str)
 
     for c in CATEGORICAL_FEATURES:
         out[c] = out[c].astype("category")
@@ -102,7 +103,7 @@ def add_model_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def apply_clock_dropout(df: pd.DataFrame, frac: float, seed: int) -> pd.DataFrame:
+def apply_clock_dropout(df: pd.DataFrame, frac: float, seed: int, inplace: bool = False) -> pd.DataFrame:
     """
     Blank both clocks for a random `frac` of games so the model learns a clock-unknown mode
     (Lichess rows almost always have clocks; many other PGNs do not).
@@ -111,16 +112,54 @@ def apply_clock_dropout(df: pd.DataFrame, frac: float, seed: int) -> pd.DataFram
         return df
     gids = pd.unique(df["game_id"])
     rng = np.random.RandomState(seed)
-    drop = set(gids[rng.rand(len(gids)) < frac])
-    out = df.copy()
+    drop = set(np.asarray(gids)[rng.rand(len(gids)) < frac])
+    out = df if inplace else df.copy()
     m = out["game_id"].isin(drop)
     out.loc[m, ["clk_white_sec", "clk_black_sec"]] = np.nan
     return out
 
 
-def load_eval_parquet(paths: list) -> pd.DataFrame:
-    frames = [pd.read_parquet(p) for p in paths]
-    return pd.concat(frames, ignore_index=True)
+# Columns training actually reads (skips FEN / move strings, which dominate memory).
+TRAIN_COLUMNS = [
+    "game_id", "ply", "move_number", "side_to_move", "elo_to_move", "elo_opponent", "elo_diff",
+    "time_class", "initial_time_sec", "increment_sec", "clk_white_sec", "clk_black_sec", "phase",
+    "opening_eco", "result_stm", "rating_band", "eval_cp_white", "mate_white", "eval_cp_stm", "mate_stm",
+]
+_STRING_COLUMNS = ["game_id", "side_to_move", "time_class", "phase", "opening_eco", "rating_band"]
+
+
+def load_eval_parquet(
+    paths: list,
+    columns: list[str] | None = None,
+    max_rows: int | None = None,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """
+    Concatenate Parquet shards. With max_rows, shards are read in a seeded random order until
+    enough rows are loaded, then subsampled; string columns become categoricals to save memory.
+    """
+    paths = list(paths)
+    if max_rows is not None:
+        paths = [paths[i] for i in np.random.RandomState(seed).permutation(len(paths))]
+    frames, n = [], 0
+    for p in paths:
+        f = pd.read_parquet(p, columns=columns)
+        for c in _STRING_COLUMNS:
+            if c in f.columns:
+                f[c] = f[c].astype("category")
+        frames.append(f)
+        n += len(f)
+        if max_rows is not None and n >= max_rows:
+            break
+    for c in _STRING_COLUMNS:
+        if c in frames[0].columns:
+            cats = pd.api.types.union_categoricals([f[c] for f in frames]).categories
+            for f in frames:
+                f[c] = f[c].cat.set_categories(cats)
+    df = pd.concat(frames, ignore_index=True)
+    if max_rows is not None and len(df) > max_rows:
+        df = df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
+    return df
 
 
 def unique_game_ids_from_parquets(paths: list[Path | str]) -> np.ndarray:
@@ -179,14 +218,15 @@ def load_eval_parquet_sharded(
     return train_df, val_df
 
 
-def build_training_frame(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], str]:
+def build_training_frame(df: pd.DataFrame, copy: bool = True) -> tuple[pd.DataFrame, list[str], str]:
     """
     Returns (Xy_frame with target column 'result_stm', feature_names, target_name).
     Drops rows without an engine eval.
     """
-    out = add_model_features(df)
+    out = add_model_features(df, copy=copy)
     mask = out["eval_cp_stm"].notna() | out["mate_stm"].notna()
-    out = out.loc[mask].copy()
+    if not mask.all():
+        out = out.loc[mask].copy()
     return out, list(FEATURE_NAMES), "result_stm"
 
 

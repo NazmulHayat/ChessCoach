@@ -139,6 +139,26 @@ python -m ep_model.phase_c.evaluate -v
 
 Scores the held-out games with the EP model and four baselines: constant, the Lichess win% curve, a logistic fit on eval only, and LightGBM on eval only. Writes `models/ep_eval_report.md` / `.json` (overall, by rating band and time class, a fixed-eval slice across player groups, calibration).
 
+## Harvest — Lichess server evals (no engine)
+
+```bash
+python -m ep_model.harvest.lichess_evals            # whole dump, ~15 min on 10 cores
+python -m ep_model.harvest.lichess_evals --max-games 20000   # pilot
+```
+
+About 1 in 9 games in a Lichess dump was analysed on Lichess and has `[%eval]` after every move. The harvester reads those evals straight from the movetext (no board replay), samples 5 positions per game like Phase A, and writes Phase B-shaped rows to `processed_lichess/rows_lichess_part*.parquet`. Games present in Phase A/B are skipped so those stay a clean test set.
+
+## Fine-tuning
+
+```bash
+python -m ep_model.phase_c.train --processed-dir ep_model/processed_lichess --pattern "rows_lichess_part*.parquet" \
+    --max-rows 12000000 --num-leaves 127 --output-dir ep_model/models_lichess
+python -m ep_model.phase_c.finetune --base-model ep_model/models_lichess --output-dir ep_model/models_finetuned
+python -m ep_model.phase_c.evaluate --extra-model ep_lichess=ep_model/models_lichess --extra-model ep_finetuned=ep_model/models_finetuned
+```
+
+`finetune` continues the pretrained trees on clean Phase B rows (test games from `models/ep_val_game_ids.txt` excluded; the rest split into fit / early-stopping). `--max-rows` reads shards in random order until the cap, with string columns as categoricals, so 12M rows fit on a 24 GB laptop. The app (`EPModel()`) loads `models_finetuned` when present, else `models` (`$CHESSCOACH_MODEL_DIR` overrides).
+
 ## Phase D — EP move review
 
 ```bash

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,13 @@ from ep_model.phase_c.prepare import add_model_features
 
 
 def default_model_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "models"
+    """$CHESSCOACH_MODEL_DIR, else the fine-tuned model if present, else the Phase C model."""
+    env = os.environ.get("CHESSCOACH_MODEL_DIR")
+    if env:
+        return Path(env)
+    base = Path(__file__).resolve().parents[1]
+    finetuned = base / "models_finetuned"
+    return finetuned if (finetuned / "ep_lgbm.txt").is_file() else base / "models"
 
 
 class EPModel:

@@ -14,9 +14,16 @@ For a position with side *S* to move, EP is the expected game score for *S* (win
 
 ## Data
 
-- Source: one Lichess monthly rated-games dump (February 2026), streamed without decompressing to disk.
-- About 5 random positions per game, so no single game dominates and positions are spread over the whole game.
-- Label: the final game result from the side to move's point of view. Every sampled position of a game shares that game's result, which is the standard setup for "from this position, how did it end".
+Source: one Lichess monthly rated-games dump (February 2026, 84.6M games), streamed without decompressing to disk. About 5 random positions per game, so no single game dominates. Label: the final game result from the side to move's point of view (every sampled position of a game shares that result).
+
+Two sets, with no game in both:
+
+| Set | How the eval was made | Size | Used for |
+|---|---|---|---|
+| **Clean** (Phase A/B) | Our Stockfish, fixed depth 17, on a random sample of games | 213k positions, 42.7k games | fine-tuning and the held-out test |
+| **Harvested** | Lichess's own server analysis (`[%eval]` in the PGN, Stockfish via fishnet, roughly 1.5–2M nodes per position) on games players chose to analyse | 46.1M positions, 9.2M games | pretraining |
+
+The harvested set is huge and free, but it differs from the clean set in two ways: its evals come from a different search budget, and analysed games are self-selected. Trained on it alone, the model was slightly overconfident on the clean test set (e.g. predicting 64% where players scored 61%) and not significantly better than the clean-only model. Pretraining on it and then fine-tuning on the clean set (continuing the same boosted trees for 85 more rounds at a lower learning rate, early-stopped on clean games outside the test set) fixed that and beat both, significantly.
 
 ## Training choices
 
@@ -36,6 +43,8 @@ For a position with side *S* to move, EP is the expected game score for *S* (win
 2. **Lichess win% formula**: `1 / (1 + exp(-0.00368208 · cp))`, cp clipped to ±1000.
 3. **Eval-only logistic** fit on the same training games.
 4. **Eval-only LightGBM**: same model class, only the engine score.
+
+Every model is also compared to the clean-only EP model with a **paired bootstrap over games** (1,000 resamples of whole games, since positions in a game are correlated), giving a 95% CI on the log-loss difference.
 
 Baseline 4 is the important comparison: the gap between it and the EP model is the value of the context features, with model capacity held equal. The report also breaks results down by rating band and time class and includes a calibration table.
 
@@ -62,6 +71,7 @@ The model learned Lichess ratings. Chess.com ratings run lower, most at the bott
 ## Known limits
 
 - One month of Lichess data; player populations on other sites differ.
+- The harvested pretraining set is self-selected (games someone chose to analyse); fine-tuning on the random clean set corrects the measurable part of that shift, and the test set is drawn only from the clean sample.
 - Positions within a game share one label, so the effective sample size is closer to the number of games than the number of positions.
 - The model scores positions, not plans: a move that loses chances because of a long-term idea Stockfish sees at depth 17 is judged by that eval.
 - Great / Miss / Brilliant labels are not implemented yet; when they are, they will be our own documented heuristics, not a claim to match Chess.com exactly.

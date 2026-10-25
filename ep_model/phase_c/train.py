@@ -23,6 +23,7 @@ import pandas as pd
 
 from ep_model.phase_c.prepare import (
     CATEGORICAL_FEATURES,
+    TRAIN_COLUMNS,
     apply_clock_dropout,
     build_training_frame,
     load_eval_parquet,
@@ -41,9 +42,8 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def default_input_globs(processed: Path) -> list[Path]:
-    paths = sorted(processed.glob("rows_with_eval_part*.parquet"))
-    return paths
+def default_input_globs(processed: Path, pattern: str = "rows_with_eval_part*.parquet") -> list[Path]:
+    return sorted(processed.glob(pattern))
 
 
 def run(
@@ -55,6 +55,7 @@ def run(
     policy_path: Path | None,
     sharded_load: bool = False,
     clock_dropout: float = 0.15,
+    num_leaves: int = 31,
 ) -> int:
     if not input_paths:
         LOG.error("No input Parquet files (rows_with_eval_part*.parquet)")
@@ -77,13 +78,11 @@ def run(
         LOG.info("Sharded load done: %s rows", len(df))
     else:
         LOG.info("Loading %s Parquet file(s)", len(input_paths))
-        df = load_eval_parquet(input_paths)
-        if max_rows is not None and len(df) > max_rows:
-            df = df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
-            LOG.info("Subsampled to %s rows", max_rows)
+        df = load_eval_parquet(input_paths, columns=TRAIN_COLUMNS, max_rows=max_rows, seed=seed)
+        LOG.info("Loaded %s rows", len(df))
 
-    df = apply_clock_dropout(df, clock_dropout, seed)
-    df, feature_names, target_col = build_training_frame(df)
+    df = apply_clock_dropout(df, clock_dropout, seed, inplace=True)
+    df, feature_names, target_col = build_training_frame(df, copy=False)
     LOG.info("Rows after filter: %s, games: %s", len(df), df["game_id"].nunique())
 
     if sharded_load and train_gids is not None and val_gids is not None:
@@ -103,7 +102,7 @@ def run(
         label=y_train,
         feature_name=feature_names,
         categorical_feature=[c for c in CATEGORICAL_FEATURES if c in feature_names],
-        free_raw_data=False,
+        free_raw_data=True,
     )
     val_set = lgb.Dataset(
         X_val,
@@ -122,12 +121,13 @@ def run(
         "first_metric_only": True,
         "verbosity": -1,
         "seed": seed,
-        "num_leaves": 31,
+        "num_leaves": num_leaves,
         "learning_rate": 0.05,
         "feature_fraction": 0.9,
         "bagging_fraction": 0.8,
         "bagging_freq": 5,
-        "min_data_in_leaf": max(5, len(train_df) // 500),
+        # Scales with data, capped so very large runs can still learn fine-grained structure.
+        "min_data_in_leaf": max(5, min(len(train_df) // 500, 2000)),
     }
 
     t0 = time.perf_counter()
@@ -181,6 +181,7 @@ def run(
         "val_metrics_by_rating_band": by_band,
         "train_time_sec": train_time,
         "input_files": [str(p.name) for p in input_paths],
+        "input_dir": str(input_paths[0].parent),
         "engine_policy_path": str(policy_path) if policy_path and policy_path.is_file() else None,
     }
     # Held-out games, so evaluate.py scores exactly the rows the model never saw.
@@ -203,10 +204,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = argparse.ArgumentParser(description="Phase C: train EP LightGBM on rows_with_eval Parquet")
     p.add_argument("--processed-dir", type=Path, default=proc)
+    p.add_argument("--pattern", default="rows_with_eval_part*.parquet", help="Shard glob inside --processed-dir")
+    p.add_argument("--num-leaves", type=int, default=31)
     p.add_argument("--output-dir", type=Path, default=models)
     p.add_argument("--val-fraction", type=float, default=0.15)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--max-rows", type=int, default=None, help="Subsample rows (debug)")
+    p.add_argument("--max-rows", type=int, default=None, help="Cap rows (shards read in random order until reached)")
     p.add_argument(
         "--sharded-load",
         action="store_true",
@@ -227,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(message)s",
     )
 
-    paths = default_input_globs(args.processed_dir)
+    paths = default_input_globs(args.processed_dir, args.pattern)
     return run(
         input_paths=paths,
         out_dir=args.output_dir,
@@ -237,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         policy_path=args.policy,
         sharded_load=args.sharded_load,
         clock_dropout=args.clock_dropout,
+        num_leaves=args.num_leaves,
     )
 
 

@@ -7,6 +7,9 @@ Baselines:
   - eval_logistic:   logistic fit on clipped cp only, trained on the same train games
   - eval_lgbm:       LightGBM on cp_stm_proxy only (same model class, no rating / clock context)
 
+--extra-model NAME=DIR adds other trained EP models (e.g. one trained on harvested Lichess evals)
+to the same comparison on the same held-out games.
+
 Usage (repo root, after phase_c.train):
   python -m ep_model.phase_c.evaluate -v
 """
@@ -74,6 +77,25 @@ def _metrics_by(y: np.ndarray, preds: dict[str, np.ndarray], groups: pd.Series, 
     return out
 
 
+def row_log_loss(y: np.ndarray, p: np.ndarray) -> np.ndarray:
+    q = np.clip(p, 1e-6, 1.0 - 1e-6)
+    return -(y * np.log(q) + (1.0 - y) * np.log(1.0 - q))
+
+
+def paired_bootstrap(y: np.ndarray, p_new: np.ndarray, p_ref: np.ndarray, games: pd.Series, n: int = 1000, seed: int = 0) -> dict:
+    """Log-loss difference (new - ref) with a 95% CI from resampling whole games (rows in a game are correlated)."""
+    diff = row_log_loss(y, p_new) - row_log_loss(y, p_ref)
+    codes, _ = pd.factorize(games.astype(str))
+    sums = np.bincount(codes, weights=diff)
+    counts = np.bincount(codes).astype(np.float64)
+    rng = np.random.RandomState(seed)
+    boots = np.empty(n)
+    for i in range(n):
+        idx = rng.randint(0, len(sums), len(sums))
+        boots[i] = sums[idx].sum() / counts[idx].sum()
+    return {"diff": float(diff.mean()), "ci_low": float(np.percentile(boots, 2.5)), "ci_high": float(np.percentile(boots, 97.5))}
+
+
 def calibration_table(y: np.ndarray, p: np.ndarray, n_bins: int = 10) -> list[dict]:
     edges = np.linspace(0.0, 1.0, n_bins + 1)
     idx = np.clip(np.digitize(p, edges) - 1, 0, n_bins - 1)
@@ -139,6 +161,10 @@ def render_markdown(report: dict) -> str:
         gain = (base - m["log_loss"]) / base
         lines.append(f"| {n} | {m['log_loss']:.4f} | {m['brier_clipped']:.4f} | {m['mae']:.4f} | {_fmt_pct(gain)} |")
 
+    lines += ["", "## Paired difference vs ep_model (log loss, 95% CI over games)", "", "| model | difference | 95% CI |", "|---|---|---|"]
+    for n, b in report.get("paired_vs_ep_model", {}).items():
+        lines.append(f"| {n} | {b['diff']:+.4f} | {b['ci_low']:+.4f} to {b['ci_high']:+.4f} |")
+
     for title, key in (("By rating band", "by_rating_band"), ("By time class", "by_time_class")):
         lines += ["", f"## {title} (log loss)", "", "| group | n | " + " | ".join(names) + " |", "|---|---|" + "---|" * len(names)]
         for g, d in report[key].items():
@@ -151,13 +177,11 @@ def render_markdown(report: dict) -> str:
         "",
         "Mean expected score: what actually happened vs what each model predicted.",
         "",
-        "| rating / time | n | actual | ep_model | lichess_formula |",
-        "|---|---|---|---|---|",
     ]
+    ep_names = [n for n in names if n.startswith("ep_")] + ["lichess_formula"]
+    lines += ["| rating / time | n | actual | " + " | ".join(ep_names) + " |", "|---|---|---|" + "---|" * len(ep_names)]
     for r in report["eval_slice"]:
-        lines.append(
-            f"| {r['group']} | {r['n']:,} | {_fmt_pct(r['actual'])} | {_fmt_pct(r['ep_model'])} | {_fmt_pct(r['lichess_formula'])} |"
-        )
+        lines.append(f"| {r['group']} | {r['n']:,} | {_fmt_pct(r['actual'])} | " + " | ".join(_fmt_pct(r[n]) for n in ep_names) + " |")
 
     lines += ["", "## Calibration (ep_model)", "", "| predicted | n | mean pred | mean actual |", "|---|---|---|---|"]
     for r in report["calibration"]["ep_model"]:
@@ -165,7 +189,7 @@ def render_markdown(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run(processed: Path, models: Path, seed: int) -> int:
+def run(processed: Path, models: Path, seed: int, extra_models: dict[str, Path] | None = None) -> int:
     model_path = models / "ep_lgbm.txt"
     ids_path = models / "ep_val_game_ids.txt"
     if not model_path.is_file() or not ids_path.is_file():
@@ -189,6 +213,8 @@ def run(processed: Path, models: Path, seed: int) -> int:
 
     booster = lgb.Booster(model_file=str(model_path))
     preds: dict[str, np.ndarray] = {"ep_model": booster.predict(val[feature_names])}
+    for name, mdir in (extra_models or {}).items():
+        preds[name] = lgb.Booster(model_file=str(mdir / "ep_lgbm.txt")).predict(val[feature_names])
 
     a, b = fit_logistic_1d(cp_tr / 100.0, y_tr)
     LOG.info("eval_logistic: p = sigmoid(%.4f + %.6f * cp)", a, b / 100.0)
@@ -211,11 +237,16 @@ def run(processed: Path, models: Path, seed: int) -> int:
         "by_rating_band": _metrics_by(y, preds, val["rating_band"]),
         "by_time_class": _metrics_by(y, preds, val["time_class"]),
         "eval_slice": eval_slice_table(val, y, preds),
-        "calibration": {n: calibration_table(y, preds[n]) for n in ("ep_model", "lichess_formula")},
+        "calibration": {n: calibration_table(y, preds[n]) for n in ("ep_model", *(extra_models or {}), "lichess_formula")},
+        "paired_vs_ep_model": {
+            n: paired_bootstrap(y, preds[n], preds["ep_model"], val["game_id"]) for n in preds if n != "ep_model"
+        },
     }
 
     for n, m in report["overall"].items():
         LOG.info("%-16s log_loss=%.4f brier=%.4f mae=%.4f", n, m["log_loss"], m["brier_clipped"], m["mae"])
+    for n, b in report["paired_vs_ep_model"].items():
+        LOG.info("%-16s vs ep_model: %+.4f (95%% CI %+.4f to %+.4f)", n, b["diff"], b["ci_low"], b["ci_high"])
 
     (models / "ep_eval_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     (models / "ep_eval_report.md").write_text(render_markdown(report), encoding="utf-8")
@@ -229,10 +260,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--processed-dir", type=Path, default=root / "ep_model" / "processed")
     p.add_argument("--models-dir", type=Path, default=root / "ep_model" / "models")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--extra-model", action="append", default=[], metavar="NAME=DIR", help="Also score this trained model")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
+    extra = {}
+    for spec in args.extra_model:
+        name, _, d = spec.partition("=")
+        extra[name] = Path(d)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(message)s")
-    return run(args.processed_dir, args.models_dir, args.seed)
+    return run(args.processed_dir, args.models_dir, args.seed, extra)
 
 
 if __name__ == "__main__":

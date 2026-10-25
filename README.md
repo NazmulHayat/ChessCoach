@@ -10,21 +10,23 @@ Chess.com's current Game Review also uses an expected-points model built from ra
 
 ## Results
 
-Held-out evaluation, split by game so no game appears in both train and test. Lower log loss is better.
+Held-out test: **31,961 positions from 6,403 games** that no model saw, labelled with our own Stockfish (depth 17). Split by game. Lower log loss is better.
 
-| Model | Log loss | Brier |
-|---|---|---|
-| **EP model** (eval + ratings + clocks + time control) | **0.574** | **0.188** |
-| Eval-only LightGBM (same model class, no context) | 0.627 | 0.210 |
-| Eval-only logistic fit | 0.627 | 0.210 |
-| Lichess win% formula | 0.650 | 0.215 |
-| Constant | 0.693 | 0.241 |
+| Model | Training data | Log loss | Brier |
+|---|---|---|---|
+| **EP model, fine-tuned** | 12M harvested Lichess positions, then 154k Stockfish positions | **0.575** | **0.189** |
+| EP model, Stockfish data only | 181k Stockfish positions | 0.579 | 0.190 |
+| EP model, harvested data only | 12M harvested Lichess positions | 0.581 | 0.192 |
+| Eval-only LightGBM (same model, no context) | 181k | 0.627 | 0.210 |
+| Lichess win% formula | none | 0.649 | 0.215 |
+| Constant | none | 0.693 | 0.240 |
 
-- **11.7% lower log loss than the Lichess win% curve**, 8.4% lower than an eval-only model trained on the same data. That second gap is the value of rating, clock and time-control context.
-- **Biggest gain in bullet** (0.580 vs 0.708 for the Lichess curve), where time pressure matters most.
-- **Well calibrated**: in every 10-point bin, the actual score is within 2.5 points of the prediction (e.g. predicted 75%, actual 76%).
+- **11.5% lower log loss than the Lichess win% curve**, 8.3% lower than an eval-only model: the value of rating, clock and time-control context.
+- **Bullet**: 0.586 vs 0.705 for the Lichess curve (−17%), where time pressure matters most.
+- **Pretrain + fine-tune is significantly better** than training on the clean data alone: −0.0043 log loss, 95% CI −0.0065 to −0.0021 (paired bootstrap over games).
+- **Calibrated**: in every 10-point bin, the actual score is within 1.5 points of the prediction.
 
-> Interim numbers: 138k training / 24k held-out positions (4,900 games). A full run on ~558k positions is in progress; this table will be updated when it finishes.
+Where the 12M positions came from: about 1 in 9 games in the Lichess dump was already analysed by Lichess's servers and carries an engine eval on every move. Harvesting those gave **46.1M labelled positions from 84.6M games in 15 minutes**, with no Stockfish time. Details in [`docs/methodology.md`](docs/methodology.md).
 
 ## The Game Review app
 
@@ -33,7 +35,7 @@ Held-out evaluation, split by game so no game appears in both train and test. Lo
 | ![Import screen](docs/images/import.png) | ![Summary screen](docs/images/summary.png) |
 
 - **Import** from a Chess.com or Lichess username (recent games, no login), or paste a PGN.
-- **Live analysis**: Stockfish runs on a pool of parallel engines; progress streams to the page.
+- **Live analysis**: Stockfish runs on a pool of parallel engines (a 60-move game at depth 17 in about 8 s); progress streams to the page.
 - **Summary**: accuracy for both players, label counts, key moments, advantage graph.
 - **Review**: board with move badges, last-move highlight and best-move arrows; eval bar that switches between **Chances** (EP) and raw **Engine** score; a coach that explains each move and points out where an eval-only review would disagree; clickable graph; move list; keyboard (← → Home End, Space to play, F to flip).
 - **Labels** use Chess.com's published expected-points bands: best (engine move), excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%, plus book moves from a polyglot opening book.
@@ -67,8 +69,13 @@ Lichess dump (.pgn.zst)
 rows_no_eval_*.parquet
    │  Phase B  Stockfish depth 17 on every position (parallel engines, FEN cache, resumable)
    ▼
-rows_with_eval_*.parquet
-   │  Phase C  LightGBM, cross-entropy on game outcome, split by game, evaluate vs baselines
+rows_with_eval_*.parquet  (clean set: fine-tuning + held-out test)
+
+Same dump ── harvest: read Lichess's own [%eval] annotations (9.2M analysed games, 15 min)
+   ▼
+rows_lichess_*.parquet  (46M positions, pretraining)
+
+   │  Phase C  LightGBM pretrain on harvested data → fine-tune on clean data → evaluate vs baselines
    ▼
 ep_lgbm.txt
    │  Phase D  review any game: engine eval per position → EP per move → labels → web app
@@ -82,8 +89,13 @@ Train your own model:
 # put a Lichess monthly dump (database.lichess.org) at ep_model/raw/*.pgn.zst
 python -m ep_model.phase_a.generate_rows --max-games 100000 --resume
 python -m ep_model.scripts.safe_run --policy ep_model/config/engine_policy_parallel.json --workers 8
-python -m ep_model.phase_c.train --sharded-load -v
-python -m ep_model.phase_c.evaluate -v      # → ep_model/models/ep_eval_report.md
+python -m ep_model.harvest.lichess_evals     # Lichess server evals → ep_model/processed_lichess/
+python -m ep_model.phase_c.train -v          # clean model + held-out test split
+python -m ep_model.phase_c.train --processed-dir ep_model/processed_lichess --pattern "rows_lichess_part*.parquet" \
+    --max-rows 12000000 --num-leaves 127 --output-dir ep_model/models_lichess
+python -m ep_model.phase_c.finetune          # → ep_model/models_finetuned (used by the app)
+python -m ep_model.phase_c.evaluate --extra-model ep_lichess=ep_model/models_lichess \
+    --extra-model ep_finetuned=ep_model/models_finetuned     # → ep_model/models/ep_eval_report.md
 # or all of it: ep_model/scripts/run_big_training.sh
 ```
 
@@ -95,7 +107,8 @@ Pipeline details: [`ep_model/README.md`](ep_model/README.md). Design decisions a
 |---|---|
 | `ep_model/phase_a/` | Stream the dump, sample positions, extract ratings / clocks / result |
 | `ep_model/phase_b/` | Stockfish evals with FEN cache, checkpoints and parallel workers |
-| `ep_model/phase_c/` | Feature prep, LightGBM training, baseline evaluation |
+| `ep_model/harvest/` | Extract positions with Lichess server evals straight from the dump |
+| `ep_model/phase_c/` | Feature prep, LightGBM training, fine-tuning, baseline evaluation with bootstrap CIs |
 | `ep_model/phase_d/` | `EPModel` predictor, move review, engine pool, FastAPI server |
 | `ep_model/scripts/` | `safe_run` (long Phase B runs with health checks, retries), full pipeline script |
 | `web/` | React + Vite + TypeScript frontend |
@@ -104,7 +117,7 @@ Pipeline details: [`ep_model/README.md`](ep_model/README.md). Design decisions a
 
 ## Roadmap
 
-- Final model on the full ~558k-position run; refresh results above.
+- Pretrain on all 46M harvested positions (memory permitting) and finish the Stockfish test set.
 - Great / Miss / Brilliant labels (needs the engine's second-best move).
 - "Retry move": find the better move yourself on the board.
 - Move sounds, estimated game rating, opening / middlegame / endgame grades.
