@@ -24,3 +24,4 @@ ep_model/raw/*.pgn.zst
 # Local review previews
 .lavish/
 ep_model/processed_lichess/
+ep_model/models_lichess/

@@ -52,7 +52,7 @@ cd web && npm install && npm run build && cd ..
 python -m ep_model.phase_d.server          # → http://127.0.0.1:8000
 ```
 
-The server needs a trained model in `ep_model/models/` (see below). Lighter engine pass: `--depth 12 --workers 2`. Frontend development with hot reload: run the server, then `cd web && npm run dev`.
+The trained model ships in `ep_model/models_finetuned/`, so the app works right after cloning; retrain with the steps below. Lighter engine pass: `--depth 12 --workers 2`. Frontend development with hot reload: run the server, then `cd web && npm run dev`.
 
 Command-line review without the UI:
 
