@@ -10,6 +10,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-03 | Pivot to an expected-points (EP) model. Phase A (sample positions from a 26 GB Lichess dump), Phase B (Stockfish depth 17, FEN cache, resumable checkpoints, `safe_run` with disk/swap/heat guards), Phase C (LightGBM). Pilot on 3k rows. |
 | 2026-10-25 | Baseline evaluation, training fixes, Phase D review, parallel engines, web app, eval harvesting, pretrain + fine-tune (below). |
 
+| 2026-10-25 | Phase B continuous queue (measured +2%), Dockerfile (Stockfish 18 compiled in), Fly.io / Render configs, request limits. Label frequencies on 200 real games. |
 | 2026-10-25 | Coach: tactic hints (missed / allowed mate, hanging pieces, missed material) and engine main line; optional Claude explanations behind ANTHROPIC_API_KEY. |
 | 2026-10-25 | UI polish: move / capture / check sounds (Web Audio), captured material, flip button, settings (board theme, sounds), skeletons, server-down banner, error boundary, mobile check at 390 px. |
 | 2026-10-25 | Game rating estimate, opening / middlegame / endgame grades. |
@@ -33,6 +34,9 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | Training run | 12M rows, 734 trees, 252 s on a laptop |
 | App latency | full 62-move game reviewed at depth 17 in 8.1 s (4 engines) |
 | Game rating estimate | LightGBM on 397k player-games (200k Lichess-analysed games), held out by game: blitz MAE 292 vs 362 median baseline (−19%), rapid 252 vs 322 (−22%), classical 188 vs 238, bullet 332 vs 376; data extraction + fit in about 3 minutes |
+| Special label frequencies | 200 random Lichess games, 13,971 moves, depth 17: Great 2.8%, Miss 1.7%, Brilliant 0.31%; stable across rating bands (Great 2.6–2.9%, Brilliant 0.25–0.53%) |
+| Phase B dispatch | continuous queue vs 256-row chunks: 8.91 → 9.09 positions/s (+2%, within run-to-run noise), 768 positions, 8 engines |
+| Docker image | 1.16 GB (Python 3.12 slim + Stockfish 18 built from source + model); full 13-move review in 11.6 s with 2 engines |
 | multipv=2 cost | 0.414 → 0.605 s/position at depth 17 (+46%); top-line eval drift median 7.5 cp, p90 27 cp (120 positions) |
 | Tests | 49 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
 
@@ -42,15 +46,15 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 2. **Clockless games broke the model.** Lichess rows almost always have clocks, so "missing clock" only appeared on move 1 and the model treated it as a strong signal; every move in a Chess.com PGN looked like a blunder. Fixed with side-to-move-relative clock features plus clock dropout (15% of training games blanked).
 3. **Side-to-move bias created fake move losses.** Comparing EP before vs after a move mixed two different "who is on move" contexts. Redesigned move loss as a counterfactual: score the played move and the engine's best move on identical opponent-to-move rows, so the bias cancels.
 4. **Engine underused the CPU.** One 2-thread Stockfish on a 10-core machine. Added a worker pool (one single-threaded engine per thread, ordered output, shared FEN cache) and automatic retry when macOS kills an engine under memory pressure.
-5. **Chunked dispatch stalls** (identified): workers idle waiting for the slowest position in each chunk; a continuous queue would add ~20%.
+5. **Chunked dispatch stalls: measured, smaller than estimated.** Phase B waited for the slowest position in each 256-row chunk before starting the next. Replaced with a continuous queue (sliding window, in-order output, shared FEN dedupe). Measured on 768 positions, 8 engines, depth 17, fresh caches, alternating order: 8.91 → 9.09 positions/s (+2%), smaller than the run-to-run spread (81–91 s). The earlier "~20%" was an estimate; with 32 positions per engine per chunk, the idle tail was only about one position per chunk. Kept for simpler code and no worst case, not for speed.
 6. **Biggest speedup was not computing at all.** ~11% of games in the dump already carry Lichess server analysis (`[%eval]` on every move). A streaming, multi-process parser (no board replay, backpressured so memory stays flat) extracted 46.1M labelled positions in 14.8 minutes, versus an estimated ~60 days of Stockfish at depth 17 even with the 8-engine pool (46.1M ÷ 8.9 positions/s). Stockfish-labelled games are excluded so they remain a clean, unbiased test set.
 7. **Training at tens of millions of rows on a 24 GB laptop.** Column pruning, categorical strings, in-place feature building and random-shard row caps.
+8. **Rating pools differ.** The model learned Lichess ratings; Chess.com ratings are mapped onto that scale per time class.
 9. **More data alone didn't win: distribution shift.** Trained only on the harvested positions, the model was slightly overconfident on the clean test set (predicted 64%, actual 61%) and not significantly better than the clean-only model (+0.0024, CI −0.0018 to +0.0065). Diagnosed: different search budget and self-selected games. Fixed with pretrain-then-fine-tune (continue the boosted trees on clean data, early-stopped on clean games outside the test set): significantly better than both.
 10. **Proving the gain is real.** Added a paired bootstrap over whole games (positions in a game are correlated) so every model comparison reports a 95% CI, not just a point estimate.
-8. **Rating pools differ.** The model learned Lichess ratings; Chess.com ratings are mapped onto that scale per time class.
 11. **"Sacrifice" needs a counterfactual too.** A naive "piece left en prise" check calls every trapped piece a sacrifice. The SEE-based check compares the move against the safest legal alternative and only counts material the player chose to give up.
-13. **One game's accuracy barely predicts rating.** Least squares on accuracy and error rates: blunder-rate-style features gave blitz MAE 341 vs 364 for guessing the median (r = 0.34). Adding accuracy in balanced positions and mean |eval| (separating "accurate because the game was easy" from "accurate in a fight") with a small LightGBM: MAE 292 (r = 0.59). Opponent rating left out on purpose, since matchmaking would leak it.
 12. **Drag-and-drop died after the first wrong retry.** Two react-chessboard quirks: dragging is wired up only when the board mounts (toggling `arePiecesDraggable` later leaves pieces undraggable), and its drop handler can be a closure from an earlier render. Fixed by keeping the board draggable for the whole retry session (remount per session) and reading the current move handler through a ref. Found with a scripted Playwright test that drags pieces.
+13. **One game's accuracy barely predicts rating.** Least squares on accuracy and error rates: blunder-rate-style features gave blitz MAE 341 vs 364 for guessing the median (r = 0.34). Adding accuracy in balanced positions and mean |eval| (separating "accurate because the game was easy" from "accurate in a fight") with a small LightGBM: MAE 292 (r = 0.59). Opponent rating left out on purpose, since matchmaking would leak it.
 
 ## Product
 

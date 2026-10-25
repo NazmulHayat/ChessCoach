@@ -138,3 +138,14 @@ def test_score_attempt_uses_after_context_and_attempt_eval():
         raise AssertionError("illegal move accepted")
     except ValueError:
         pass
+
+
+def test_rate_limiter_sliding_window():
+    from ep_model.phase_d.server import RateLimiter
+
+    lim = RateLimiter(2, window_sec=10)
+    assert lim.allow("a", now=0) and lim.allow("a", now=1)
+    assert not lim.allow("a", now=2)
+    assert lim.allow("b", now=2)  # per key
+    assert lim.allow("a", now=11)  # first event expired
+    assert RateLimiter(0).allow("a")  # 0 = unlimited

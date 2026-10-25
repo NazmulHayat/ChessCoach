@@ -1,0 +1,36 @@
+# Fly.io config. Deploy (after `fly auth login`): fly launch --no-deploy --copy-config --name <your-app>, then fly deploy.
+# Machines stop when idle and start on the next request, so an unused app costs close to nothing.
+app = "chesscoach"
+primary_region = "nrt"
+
+[build]
+
+[env]
+  CHESSCOACH_DEPTH = "17"
+  CHESSCOACH_WORKERS = "2"
+  CHESSCOACH_MAX_CONCURRENT = "2"
+  CHESSCOACH_REVIEWS_PER_HOUR = "30"
+  CHESSCOACH_MAX_PLIES = "400"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+    hard_limit = 40
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"

@@ -5,6 +5,10 @@ Usage (repo root):
   python -m ep_model.phase_d.server                  # http://127.0.0.1:8000
   python -m ep_model.phase_d.server --depth 12 --workers 2
 
+Environment (all optional; the Docker image sets them): CHESSCOACH_DEPTH, CHESSCOACH_WORKERS,
+CHESSCOACH_MAX_CONCURRENT (reviews analysed at once, others get 503), CHESSCOACH_REVIEWS_PER_HOUR
+(per client IP, 0 = unlimited), CHESSCOACH_MAX_PLIES (longest game accepted), PORT, HOST.
+
 API:
   POST /api/review                 {pgn, white_elo?, black_elo?, rating_pool?, depth?} → server-sent events
                                    (event: progress {done, total} …, then event: result {review} or event: error)
@@ -23,8 +27,9 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +37,7 @@ from typing import Any
 
 import chess.pgn
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -58,7 +63,43 @@ CONFIG: dict[str, Any] = {
     "depth": int(os.environ.get("CHESSCOACH_DEPTH", "0")) or None,
     "workers": int(os.environ.get("CHESSCOACH_WORKERS", "4")),
     "policy": Path(os.environ.get("CHESSCOACH_POLICY", str(DEFAULT_POLICY))),
+    "max_concurrent": int(os.environ.get("CHESSCOACH_MAX_CONCURRENT", "4")),
+    "reviews_per_hour": int(os.environ.get("CHESSCOACH_REVIEWS_PER_HOUR", "0")),
+    "max_plies": int(os.environ.get("CHESSCOACH_MAX_PLIES", "600")),
 }
+
+
+class RateLimiter:
+    """Sliding one-hour window of events per key (client IP). limit <= 0 means unlimited."""
+
+    def __init__(self, limit: int, window_sec: float = 3600.0):
+        self.limit, self.window = limit, window_sec
+        self._events: dict[str, deque] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, now: float | None = None) -> bool:
+        if self.limit <= 0:
+            return True
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            q = self._events.setdefault(key, deque())
+            while q and now - q[0] > self.window:
+                q.popleft()
+            if len(q) >= self.limit:
+                return False
+            q.append(now)
+            return True
+
+
+def client_ip(request: Request) -> str:
+    """Real client address behind Fly.io / Render / other proxies."""
+    for header in ("fly-client-ip", "true-client-ip"):
+        if request.headers.get(header):
+            return request.headers[header]
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 STATE: dict[str, Any] = {}
 # Recent reviews' model rows, so retry mode can score a tried move in the same context. In memory only:
 # after a restart the client falls back to checking the engine's top move.
@@ -94,7 +135,12 @@ async def lifespan(app: FastAPI):
         threads=int(policy.get("threads", 1)),
         hash_mb=int(policy.get("hash_mb", 64)),
     )
-    LOG.info("Ready: depth %s, %s engines", STATE["depth"], CONFIG["workers"])
+    STATE["review_slots"] = asyncio.Semaphore(max(1, CONFIG["max_concurrent"]))
+    STATE["limiter"] = RateLimiter(CONFIG["reviews_per_hour"])
+    LOG.info(
+        "Ready: depth %s, %s engines, %s concurrent reviews, %s reviews/hour/IP",
+        STATE["depth"], CONFIG["workers"], CONFIG["max_concurrent"], CONFIG["reviews_per_hour"] or "unlimited",
+    )
     try:
         yield
     finally:
@@ -136,16 +182,25 @@ def health() -> dict[str, Any]:
 
 
 @app.post("/api/review")
-async def review(req: ReviewRequest) -> StreamingResponse:
+async def review(req: ReviewRequest, request: Request) -> StreamingResponse:
     try:
         game = _parse_game(req.pgn)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
+    plies = sum(1 for _ in game.mainline_moves())
+    if plies > CONFIG["max_plies"]:
+        raise HTTPException(status_code=413, detail=f"Game too long ({plies} half-moves; the limit is {CONFIG['max_plies']}).")
+    slots: asyncio.Semaphore = STATE["review_slots"]
+    if slots.locked():
+        raise HTTPException(status_code=503, detail="The server is busy analysing other games. Try again in a minute.")
+    if not STATE["limiter"].allow(client_ip(request)):
+        raise HTTPException(status_code=429, detail="Review limit reached for this hour. Try again later.")
 
     h = game.headers
     white_elo = req.white_elo or _elo_or_none(h, "WhiteElo") or DEFAULT_ELO
     black_elo = req.black_elo or _elo_or_none(h, "BlackElo") or DEFAULT_ELO
-    depth = req.depth or STATE["depth"]
+    # Never deeper than the server is configured for (the model was trained at depth 17).
+    depth = min(req.depth or STATE["depth"], STATE["depth"])
     loop = asyncio.get_running_loop()
     events: asyncio.Queue = asyncio.Queue()
 
@@ -171,14 +226,19 @@ async def review(req: ReviewRequest) -> StreamingResponse:
             LOG.exception("review failed")
             loop.call_soon_threadsafe(events.put_nowait, ("error", {"detail": str(e)}))
 
+    await slots.acquire()
+
     async def stream():
-        task = loop.run_in_executor(None, work)
-        while True:
-            event, data = await events.get()
-            yield _sse(event, data)
-            if event in ("result", "error"):
-                break
-        await task
+        try:
+            task = loop.run_in_executor(None, work)
+            while True:
+                event, data = await events.get()
+                yield _sse(event, data)
+                if event in ("result", "error"):
+                    break
+            await task
+        finally:
+            slots.release()
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
@@ -347,14 +407,14 @@ def main(argv: list[str] | None = None) -> int:
     import uvicorn
 
     p = argparse.ArgumentParser(description="ChessCoach EP review web app")
-    p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    p.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     p.add_argument("--depth", type=int, default=None, help="Stockfish depth (default: policy depth, 17)")
     p.add_argument("--workers", type=int, default=CONFIG["workers"], help="Parallel Stockfish processes")
     p.add_argument("--policy", type=Path, default=CONFIG["policy"])
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    CONFIG.update(depth=args.depth, workers=args.workers, policy=args.policy)
+    CONFIG.update(depth=args.depth or CONFIG["depth"], workers=args.workers, policy=args.policy)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 

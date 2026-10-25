@@ -165,6 +165,12 @@ def render_markdown(report: dict) -> str:
     for n, b in report.get("paired_vs_ep_model", {}).items():
         lines.append(f"| {n} | {b['diff']:+.4f} | {b['ci_low']:+.4f} to {b['ci_high']:+.4f} |")
 
+    ref = report.get("paired_vs_reference")
+    if ref:
+        lines += ["", f"## Paired difference vs {ref['reference']} (log loss, 95% CI over games)", "", "| model | difference | 95% CI |", "|---|---|---|"]
+        for n, b in ref["models"].items():
+            lines.append(f"| {n} | {b['diff']:+.4f} | {b['ci_low']:+.4f} to {b['ci_high']:+.4f} |")
+
     for title, key in (("By rating band", "by_rating_band"), ("By time class", "by_time_class")):
         lines += ["", f"## {title} (log loss)", "", "| group | n | " + " | ".join(names) + " |", "|---|---|" + "---|" * len(names)]
         for g, d in report[key].items():
@@ -189,7 +195,10 @@ def render_markdown(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run(processed: Path, models: Path, seed: int, extra_models: dict[str, Path] | None = None) -> int:
+def run(
+    processed: Path, models: Path, seed: int, extra_models: dict[str, Path] | None = None, reference: str | None = None
+) -> int:
+    """reference: also bootstrap every EP model against this one (e.g. the model currently shipped)."""
     model_path = models / "ep_lgbm.txt"
     ids_path = models / "ep_val_game_ids.txt"
     if not model_path.is_file() or not ids_path.is_file():
@@ -243,6 +252,21 @@ def run(processed: Path, models: Path, seed: int, extra_models: dict[str, Path] 
         },
     }
 
+    if reference:
+        if reference not in preds:
+            LOG.error("Unknown --reference %s (have %s)", reference, ", ".join(preds))
+            return 1
+        report["paired_vs_reference"] = {
+            "reference": reference,
+            "models": {
+                n: paired_bootstrap(y, preds[n], preds[reference], val["game_id"])
+                for n in preds
+                if n.startswith("ep_") and n != reference
+            },
+        }
+        for n, b in report["paired_vs_reference"]["models"].items():
+            LOG.info("%-16s vs %s: %+.4f (95%% CI %+.4f to %+.4f)", n, reference, b["diff"], b["ci_low"], b["ci_high"])
+
     for n, m in report["overall"].items():
         LOG.info("%-16s log_loss=%.4f brier=%.4f mae=%.4f", n, m["log_loss"], m["brier_clipped"], m["mae"])
     for n, b in report["paired_vs_ep_model"].items():
@@ -261,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--models-dir", type=Path, default=root / "ep_model" / "models")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--extra-model", action="append", default=[], metavar="NAME=DIR", help="Also score this trained model")
+    p.add_argument("--reference", default=None, help="Also compare every EP model to this one (paired bootstrap)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
     extra = {}
@@ -268,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
         name, _, d = spec.partition("=")
         extra[name] = Path(d)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(message)s")
-    return run(args.processed_dir, args.models_dir, args.seed, extra)
+    return run(args.processed_dir, args.models_dir, args.seed, extra, args.reference)
 
 
 if __name__ == "__main__":

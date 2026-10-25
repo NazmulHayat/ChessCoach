@@ -1,0 +1,20 @@
+# Render Blueprint: New > Blueprint, point it at this repo. Builds the Dockerfile.
+services:
+  - type: web
+    name: chesscoach
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: CHESSCOACH_DEPTH
+        value: "17"
+      - key: CHESSCOACH_WORKERS
+        value: "1"
+      - key: CHESSCOACH_MAX_CONCURRENT
+        value: "1"
+      - key: CHESSCOACH_REVIEWS_PER_HOUR
+        value: "20"
+      - key: CHESSCOACH_MAX_PLIES
+        value: "400"
+      - key: ANTHROPIC_API_KEY
+        sync: false

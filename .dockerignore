@@ -1,0 +1,23 @@
+# Only the app goes into the image: code, trained models, opening book, built web/.
+.git
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.lavish
+.cursor
+.DS_Store
+.env
+archive
+docs
+tests
+web/node_modules
+web/dist
+ep_model/raw
+ep_model/processed
+ep_model/processed_lichess
+ep_model/models
+ep_model/models_lichess
+lichess_db_*
+*.pgn.zst

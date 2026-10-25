@@ -18,7 +18,8 @@ import re
 import sqlite3
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -190,9 +191,11 @@ def run(
 
     limit_reached = False
     workers = max(1, workers)
-    # Rows are evaluated in chunks so `workers` engines (one per thread) can run in parallel;
-    # cache lookups, cache writes and output stay on this thread, in input order.
-    chunk_size = 32 * workers
+    # Continuous queue: each uncached FEN is submitted as soon as its row is read, and rows leave a
+    # sliding window in input order once their eval is ready. Only a full window blocks (on its oldest
+    # row), so engines stay busy instead of idling at the end of a chunk while its slowest position
+    # finishes. Cache lookups, cache writes and output stay on this thread, in input order.
+    window_size = 32 * workers
 
     def flush() -> None:
         nonlocal shard_idx
@@ -229,32 +232,55 @@ def run(
                 info = raw_info[0] if isinstance(raw_info, list) else raw_info
                 return extract_eval_fields(board, info), dt
 
-            def process_chunk(rows: list[dict]) -> None:
-                fields_by_fen: dict[str, dict] = {}
-                misses: list[str] = []
-                for row in rows:
-                    fen = row["fen"]
-                    if fen in fields_by_fen or fen in misses:
-                        continue
-                    cached = cache_get(fen_conn, fen)
-                    if cached is not None:
-                        stats["cache_hits"] += 1
-                        fields_by_fen[fen] = cached
-                    else:
-                        misses.append(fen)
-                for fen, (fields, dt) in zip(misses, pool.map(analyse, misses)):
+            window: deque[dict] = deque()  # rows read but not yet written, in input order
+            ready: dict[str, dict] = {}  # fen -> eval fields, while rows in the window still need them
+            inflight: dict[str, Future] = {}  # fen -> engine job
+            refs: dict[str, int] = {}  # fen -> rows in the window with this fen
+            since_commit = 0
+
+            def admit(row: dict) -> None:
+                fen = row["fen"]
+                window.append(row)
+                refs[fen] = refs.get(fen, 0) + 1
+                if fen in ready or fen in inflight:
+                    return
+                cached = cache_get(fen_conn, fen)
+                if cached is not None:
+                    stats["cache_hits"] += 1
+                    ready[fen] = cached
+                else:
+                    inflight[fen] = pool.submit(analyse, fen)
+
+            def emit_head(block: bool) -> bool:
+                """Write the oldest row if its eval is ready (waiting for it if `block`)."""
+                nonlocal since_commit
+                row = window[0]
+                fen = row["fen"]
+                if fen not in ready:
+                    fut = inflight[fen]
+                    if not block and not fut.done():
+                        return False
+                    fields, dt = fut.result()
+                    del inflight[fen]
                     stats["engine_calls"] += 1
                     stats["t_engine"] += dt
-                    fields_by_fen[fen] = fields
                     cache_put(fen_conn, fen, fields)
-                fen_conn.commit()
-                for row in rows:
-                    buffer.append({**row, **fields_by_fen[row["fen"]]})
-                    stats["rows_out"] += 1
-                    if len(buffer) >= flush_rows:
-                        flush()
+                    since_commit += 1
+                    if since_commit >= 256:
+                        fen_conn.commit()
+                        since_commit = 0
+                    ready[fen] = fields
+                window.popleft()
+                buffer.append({**row, **ready[fen]})
+                refs[fen] -= 1
+                if refs[fen] == 0:
+                    del refs[fen], ready[fen]
+                stats["rows_out"] += 1
+                if len(buffer) >= flush_rows:
+                    fen_conn.commit()
+                    flush()
+                return True
 
-            pending: list[dict] = []
             for ipath in inputs:
                 if limit_reached:
                     break
@@ -268,18 +294,18 @@ def run(
                         if limit_reached:
                             break
                         for row in batch.to_pylist():
-                            if max_rows is not None and stats["rows_out"] + len(pending) >= max_rows:
+                            if max_rows is not None and stats["rows_out"] + len(window) >= max_rows:
                                 limit_reached = True
                                 break
                             if resume and is_row_done(row_conn, row["game_id"], int(row["ply"])):
                                 stats["rows_skipped_done"] += 1
                                 continue
-                            pending.append(row)
-                            if len(pending) >= chunk_size:
-                                process_chunk(pending)
-                                pending = []
-            if pending:
-                process_chunk(pending)
+                            admit(row)
+                            while window and emit_head(block=len(window) >= window_size):
+                                pass
+            while window:
+                emit_head(block=True)
+            fen_conn.commit()
 
         if buffer:
             flush()

@@ -64,6 +64,18 @@ Command-line review without the UI:
 python -m ep_model.phase_d.review game.pgn --html review.html
 ```
 
+## Run with Docker / deploy
+
+```bash
+docker build -t chesscoach .
+docker run -p 8000:8000 chesscoach        # → http://127.0.0.1:8000
+```
+
+The image compiles Stockfish 18 for the target CPU and serves the built frontend. Settings are environment variables: `CHESSCOACH_DEPTH` (17), `CHESSCOACH_WORKERS` (engine processes), `CHESSCOACH_MAX_CONCURRENT` (reviews at once; others get "busy"), `CHESSCOACH_REVIEWS_PER_HOUR` (per visitor IP), `CHESSCOACH_MAX_PLIES`, and optional `ANTHROPIC_API_KEY`.
+
+- **Fly.io**: `fly launch --no-deploy --copy-config --name <app>` then `fly deploy` ([`fly.toml`](fly.toml): 2 vCPU / 1 GB, stops when idle).
+- **Render**: New → Blueprint on this repo ([`render.yaml`](render.yaml)).
+
 ## How it works
 
 ```

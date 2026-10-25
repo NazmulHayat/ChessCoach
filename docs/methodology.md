@@ -76,6 +76,8 @@ Chess.com describes these only in words, so these are our own rules, written in 
 
 Priority: book > brilliant > great > miss > the EP band label. The band label is kept as `base_label`, and the "eval-only review would say…" comparison uses it.
 
+**How often they fire** (`python -m ep_model.scripts.label_stats`, 200 random Lichess games, 13,971 moves, depth 17): Great 2.8%, Miss 1.7%, Brilliant 0.31% of moves. The rates are steady across rating bands (Great 2.6–2.9%, Brilliant 0.25–0.53%, Miss 1.6–2.0%), which is what the rating-dependent thresholds are for.
+
 **multipv=2 cost**, measured on 120 positions at depth 17 (one thread): 0.414 → 0.605 s per position (+46%). The top line's eval moves slightly (median 7.5 cp, 90th percentile 27 cp) compared with the single-line search the model was trained on.
 
 ### Coach text
