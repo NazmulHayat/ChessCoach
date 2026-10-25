@@ -7,6 +7,7 @@ import type { TreeModel } from './types'
 export const TIME_CLASSES: Record<string, number> = { bullet: 0, blitz: 1, rapid: 2, classical: 3 }
 export const BALANCED_CP = 300
 export const MIN_MOVES = 10
+export const MAX_SWING = 400
 export const OPENING_PLIES = 20
 export const ENDGAME_MAX_PIECES = 6
 export const PHASE_GRADES: [number, string][] = [
@@ -97,7 +98,8 @@ export function estimateRating(
     rating: pyRound(r, -1),
     low: pyRound(r - sd, -1),
     high: pyRound(r + sd, -1),
-    plays_like: pyRound(playsLike, -1),
+    // FIDE's single-game performance bound (see MAX_SWING in rating_estimate.py).
+    plays_like: pyRound(playerRating + Math.max(-MAX_SWING, Math.min(MAX_SWING, playsLike - playerRating)), -2),
   }
 }
 

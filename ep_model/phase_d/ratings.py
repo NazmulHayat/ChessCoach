@@ -30,9 +30,9 @@ def to_lichess_scale(elo: int, pool: str, time_class: str) -> int:
     return int(round(a * elo + b))
 
 
-def from_lichess_scale(elo: int, pool: str, time_class: str) -> int:
-    """Inverse of to_lichess_scale (e.g. to show an estimate in Chess.com terms), rounded to 10."""
+def from_lichess_scale(elo: int, pool: str, time_class: str, ndigits: int = -1) -> int:
+    """Inverse of to_lichess_scale (e.g. to show an estimate in Chess.com terms), rounded to 10 by default."""
     if pool != "chesscom":
         return elo
     a, b = _CHESSCOM_TO_LICHESS.get(time_class, _CHESSCOM_TO_LICHESS["blitz"])
-    return int(round((elo - b) / a, -1))
+    return int(round((elo - b) / a, ndigits))

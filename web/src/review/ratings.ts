@@ -42,9 +42,9 @@ export function toLichessScale(elo: number, pool: string, timeClass: string): nu
   return pyRound(a * elo + b)
 }
 
-/** Inverse of toLichessScale (e.g. to show an estimate in Chess.com terms), rounded to 10. */
-export function fromLichessScale(elo: number, pool: string, timeClass: string): number {
+/** Inverse of toLichessScale (e.g. to show an estimate in Chess.com terms), rounded to 10 by default. */
+export function fromLichessScale(elo: number, pool: string, timeClass: string, ndigits = -1): number {
   if (pool !== 'chesscom') return elo
   const [a, b] = CHESSCOM_TO_LICHESS[timeClass] ?? CHESSCOM_TO_LICHESS.blitz
-  return pyRound((elo - b) / a, -1)
+  return pyRound((elo - b) / a, ndigits)
 }

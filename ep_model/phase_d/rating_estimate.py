@@ -40,6 +40,9 @@ TIME_CLASSES = {"bullet": 0, "blitz": 1, "rapid": 2, "classical": 3}
 BALANCED_CP = 300  # |eval| below this counts as a roughly balanced position
 
 MIN_MOVES = 10
+# "Played like" may differ from your rating by at most this much: FIDE's single-game performance bound
+# (opponent ± 400). Uncapped, one bullet game could map to ~3000, since one game says little about rating.
+MAX_SWING = 400.0
 OPENING_PLIES = 20
 ENDGAME_MAX_PIECES = 6
 
@@ -108,12 +111,13 @@ def estimate_rating(
     table = meta["inverse"].get(time_class) or meta["inverse"]["blitz"]
     plays_like = float(np.interp(score, table["score"], table["rating"]))
     r = player_rating + table["k"] * (plays_like - player_rating)
+    plays_like = player_rating + max(-MAX_SWING, min(MAX_SWING, plays_like - player_rating))
     sd = meta["posterior_sd"].get(time_class) or meta["posterior_sd"]["blitz"]
     return {
         "rating": int(round(r, -1)),
         "low": int(round(r - sd, -1)),
         "high": int(round(r + sd, -1)),
-        "plays_like": int(round(plays_like, -1)),
+        "plays_like": int(round(plays_like, -2)),  # shown game rating, rounded to 100
     }
 
 

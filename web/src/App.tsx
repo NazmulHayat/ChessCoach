@@ -13,8 +13,8 @@ import { HelpMenu } from './components/HelpMenu'
 import { InfoTip } from './components/InfoTip'
 import { ReviewTour } from './components/ReviewTour'
 import { MODE_HELP } from './lib/help'
-import { Welcome } from './components/Welcome'
 import { rememberGame } from './lib/recent'
+import { SAMPLE_PREVIEW } from './lib/sample'
 import { Summary } from './components/Summary'
 import { engineScore, engineWhiteShare, pct } from './format'
 import { play, soundForSan } from './lib/sound'
@@ -336,9 +336,14 @@ export default function App() {
           <SettingsMenu settings={settings} onChange={updateSettings} />
         </div>
       </header>
-      <main className={`layout ${stage === 'import' || stage === 'analyzing' ? 'layout-welcome' : ''}`}>
+      <main className={`layout ${stage === 'import' ? 'layout-import' : ''}`}>
         <section className="left">
-          {stage === 'import' || stage === 'analyzing' ? <Welcome /> : <BoardArea
+          {stage === 'import' ? <BoardArea
+            {...SAMPLE_PREVIEW}
+            orientation="white"
+            arrow={null}
+            colors={BOARD_THEMES[settings.theme]}
+          /> : <BoardArea
             fen={fen}
             orientation={orientation}
             white={whiteP}

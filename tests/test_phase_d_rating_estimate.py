@@ -62,3 +62,13 @@ def test_lichess_accuracy_aggregation():
     # A quiet, equal game is near 100 for both sides.
     acc = lichess_game_accuracy([15.0] + [20.0, 10.0] * 15)
     assert acc["white"] > 98 and acc["black"] > 98
+
+
+def test_played_like_is_capped_at_fide_single_game_bound():
+    from ep_model.phase_d.rating_estimate import MAX_SWING, estimate_rating
+
+    # A flawless bullet game would invert to the top of the table; shown value stays within ±400.
+    est = estimate_rating([0.0] * 40, [50.0] * 40, "bullet", 1500)
+    assert est is not None and est["plays_like"] <= 1500 + MAX_SWING
+    est = estimate_rating([0.3] * 40, [50.0] * 40, "bullet", 1500)
+    assert est is not None and est["plays_like"] >= 1500 - MAX_SWING

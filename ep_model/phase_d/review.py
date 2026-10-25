@@ -42,7 +42,7 @@ from ep_model.phase_c.evaluate import lichess_expected
 from ep_model.phase_c.prepare import cp_or_mate_proxy
 from ep_model.phase_d.predictor import EPModel, board_model_dir
 from ep_model.phase_d.accuracy import combine, move_accuracy_pct, volatility_weights
-from ep_model.phase_d.rating_estimate import estimate_rating, phase_grade, phase_of
+from ep_model.phase_d.rating_estimate import MAX_SWING, estimate_rating, phase_grade, phase_of
 from ep_model.phase_d.ratings import detect_pool, from_lichess_scale, to_lichess_scale
 from ep_model.phase_d.special import (
     is_brilliant,
@@ -416,7 +416,11 @@ def review_game(
             w_elo if side == "white" else b_elo,
         )
         if est is not None and pool != "lichess":
-            est = {k: from_lichess_scale(v, pool, time_class) for k, v in est.items()}
+            # "Played like" is shown rounded to 100; the unused range stays rounded to 10.
+            est = {k: from_lichess_scale(v, pool, time_class, -2 if k == "plays_like" else -1) for k, v in est.items()}
+            # Keep the ±400 single-game bound on the scale the player sees.
+            own = w_elo_raw if side == "white" else b_elo_raw
+            est["plays_like"] = int(round(max(own - int(MAX_SWING), min(own + int(MAX_SWING), est["plays_like"])), -2))
         summary[side] = {
             "moves": len(mine),
             "avg_ep_loss": sum(m["ep_loss"] for m in mine) / len(mine) if mine else 0.0,

@@ -1,9 +1,17 @@
 import { useRef, useState } from 'react'
-import { recentGames } from '../lib/recent'
+import { recentGames, type RecentGame } from '../lib/recent'
 import { SAMPLE_PGN } from '../lib/sample'
 import { fetchGames } from '../api'
-import { shortDate, timeClassLabel } from '../format'
+import { relativeDay, shortDate, timeClassLabel } from '../format'
 import type { GameListItem } from '../types'
+
+/** W / L / D from your side when we know which side you played, otherwise a neutral dot. */
+function RecentResult({ game }: { game: RecentGame }) {
+  const winner = game.result === '1-0' ? 'white' : game.result === '0-1' ? 'black' : game.result === '1/2-1/2' ? 'draw' : null
+  if (!game.side || !winner) return <span className="result-pill" aria-hidden>·</span>
+  const outcome = winner === 'draw' ? 'draw' : winner === game.side ? 'win' : 'loss'
+  return <span className={`result-pill ${outcome}`} aria-label={outcome}>{outcome[0].toUpperCase()}</span>
+}
 
 type Tab = 'chesscom' | 'lichess' | 'pgn'
 
@@ -137,20 +145,26 @@ export function ImportPanel({ onAnalyze }: { onAnalyze: (pgn: string, you?: 'whi
               })}
             </div>
           )}
-          {!games && !error && !loading && <p className="muted pad">Enter a username to list recent games, then pick one to review.</p>}
         </>
       )}
-      <div className="sample-game">
-        <button type="button" className="btn btn-secondary btn-block" onClick={() => onAnalyze(SAMPLE_PGN, 'white')}>Try a sample game</button>
-        <p className="muted">A queen sacrifice. A seven-move lesson.</p>
-      </div>
+      <button type="button" className="sample-game" onClick={() => onAnalyze(SAMPLE_PGN, 'white')}>
+        <span className="sample-icon" aria-hidden>♞</span>
+        <span><strong>Review the game on the board</strong><small>Alice vs Bob: 5. Nxe5!! gives up the queen</small></span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+          <path d="M5 12h14m-6-6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
       {recent.length > 0 && (
         <section className="recent-games" aria-label="Recently reviewed">
           <h2>Recently reviewed</h2>
           {recent.map((g) => (
             <button type="button" className="recent-game" key={g.pgn} onClick={() => onAnalyze(g.pgn, g.side)}>
-              <span><strong>{g.white} vs {g.black}</strong><small>Reviewed {shortDate(g.date)}</small></span>
-              <span className="recent-result">{g.result}</span>
+              <RecentResult game={g} />
+              <span className="recent-main">
+                <strong>{g.side ? `vs ${g.side === 'white' ? g.black : g.white}` : `${g.white} vs ${g.black}`}</strong>
+                <small>{g.side ? `as ${g.side === 'white' ? 'White' : 'Black'} · ` : ''}{relativeDay(g.date)}</small>
+              </span>
+              <span className="recent-score">{g.result.replace('1/2', '½')}</span>
             </button>
           ))}
         </section>

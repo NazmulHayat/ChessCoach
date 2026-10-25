@@ -468,18 +468,7 @@ button:disabled { cursor: not-allowed; }
 }
 
 /* Welcome and import. */
-.layout-welcome { align-items: center; min-height: calc(100dvh - 52px); }
-.welcome { width: 100%; max-width: 660px; padding: var(--space-8) var(--space-6); }
-.welcome-mark { font-size: 48px; line-height: 1; color: var(--text-2); }
-.welcome h1 { font-size: 40px; line-height: 1.15; letter-spacing: -.035em; margin: 22px 0 18px; }
-.welcome-pitch { max-width: 50ch; font-size: 17px; color: var(--text-2); text-wrap: pretty; }
-.how-it-works { list-style: none; margin: 30px 0; padding: 0; display: grid; gap: 20px; }
-.how-it-works li { display: flex; gap: 14px; align-items: flex-start; }
-.how-it-works li > span { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 50%; color: var(--text-2); flex: none; font-variant-numeric: tabular-nums; }
-.how-it-works strong { font-size: 15px; }
-.how-it-works p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
-.welcome-foot { color: var(--muted); font-size: 13px; }
-.layout-welcome .panel { width: 100%; min-height: 430px; }
+.layout-import .panel { height: auto; max-height: none; min-height: 0; }
 .panel-body:has(.tabs) { overflow-y: auto; }
 .search-row .field { min-width: 0; }
 .game-item { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 8px; }
@@ -488,20 +477,30 @@ button:disabled { cursor: not-allowed; }
 .result-pill.loss { color: var(--danger); }
 .result-pill.draw { color: var(--text-2); }
 .time-icon { vertical-align: -2px; }
-.sample-game { padding-top: var(--space-3); border-top: 1px solid var(--line); }
-.sample-game p { margin: 10px 0 0; font-size: 12px; text-align: center; }
-.recent-games h2 { font-size: 14px; margin: 12px 0 6px; }
-.recent-game { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 4px; text-align: left; cursor: pointer; }
+.sample-game {
+  width: 100%; display: flex; align-items: center; gap: 12px; margin-top: var(--space-4); padding: 12px 14px;
+  border: 1px dashed var(--line); border-radius: var(--radius-md); background: transparent; color: var(--text); text-align: left; cursor: pointer;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+.sample-game:hover { background: var(--hover); border-color: var(--muted); }
+.sample-game > span:nth-child(2) { flex: 1; min-width: 0; }
+.sample-game strong { display: block; font-size: 14px; }
+.sample-game small { color: var(--muted); font-size: 12px; }
+.sample-game svg { color: var(--muted); }
+.sample-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius-sm); background: var(--panel-3); font-size: 20px; }
+.recent-games { margin-top: var(--space-4); }
+.recent-games h2 { font-size: 12px; margin: 0 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.recent-game {
+  width: 100%; display: flex; align-items: center; gap: 12px; background: transparent; border: 0;
+  border-radius: var(--radius-sm); padding: 8px 6px; text-align: left; cursor: pointer;
+}
 .recent-game:hover { background: var(--hover); }
-.recent-game > span:first-child { min-width: 0; }
-.recent-game strong { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-game small, .recent-result { color: var(--muted); font-size: 12px; }
-.recent-result { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.recent-main { flex: 1; min-width: 0; }
+.recent-game strong { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-game small { color: var(--muted); font-size: 12px; }
+.recent-score { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .analysis-status { display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; }
 @media (max-width: 960px) {
-  .layout-welcome { min-height: 0; gap: 8px; }
-  .welcome { padding: 20px 8px; }
-  .welcome h1 { font-size: 32px; }
 }
 
 /* Review: reserve room for the top bar, both players and board. */
@@ -612,12 +611,6 @@ kbd { background: var(--panel-3); padding: 3px 6px; border-radius: var(--radius-
   .eval-text { font-size: 10px; }
   .square-badge { right: -4px; top: -5px; }
   .square-badge .label-icon { width: 22px !important; height: 22px !important; font-size: 11px !important; }
-  .welcome { padding: 12px 6px 4px; }
-  .welcome-mark { font-size: 36px; }
-  .welcome h1 { font-size: 30px; margin: 16px 0; }
-  .welcome-pitch { font-size: 15px; }
-  .how-it-works { gap: 16px; margin: 24px 0; }
-  .layout-welcome .panel { min-height: 0; }
   .pgn-field { min-height: 180px; }
   .coach { padding: 12px; gap: 8px; }
   .coach-avatar { width: 30px; height: 30px; }

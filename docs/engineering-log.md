@@ -82,6 +82,9 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 23. **Static exchange was 50× too slow in the browser.** chess.js generates SAN for every legal move; sacrifice checks call it thousands of times per game. Using its internal move generator (pinned to chess.js 1.4.0) took the helper test from over 5 minutes to 6 s.
 24. **Accuracy formula chosen on data.** With Chess.com's own accuracy now in the benchmark, Lichess's formula on our engine's evals beat the same formula on EP loss against both Lichess and Chess.com and picked winners as well, so the app switched.
 
+25. **"Played like" exploded to 3190.** In bullet a 1450 and a 2650 produce nearly the same typical game, so mapping one game's quality score back to a rating amplified noise ~5× and two ~1570 players both came out at the top of the table. Compared five formulas on 889 benchmark player-games; shipped plays-like capped at your rating ± 400 (FIDE's single-game performance bound), applied on the displayed rating scale.
+26. **Tested a per-move "which rating errs like this?" game rating before building it (experiment, not shipped).** 60k analysed Lichess rapid games (120k player-games, 4.0M moves) not used by the shipped model, split by player. The proposed least-squares fit (expected loss by rating and context, pick the closest rating) did worst: single-game MAE 538 vs 364 for the shipped plays-like (median-guess baseline 324). Replacing it with a likelihood (probability of each loss size given rating, eval, clock, ply) brought it to 367, with 80% intervals that hold the player's rating 81.6% of the time on held-out players (median width 1,100 points: one rapid game says little). Alone it did not beat the shipped game-level features (corr 0.533 vs 0.560 on the same 12k fitting games); combined with them it helped a little: corr 0.586, plays-like MAE 354, 5-game average MAE 186 vs 192. Not yet bootstrap-tested; position difficulty (gap to the second-best move) needs our own engine runs, as the dump has no second line.
+
 ## Product
 
 - FastAPI server: streamed analysis (server-sent events), parallel engine pool with FEN cache, Chess.com and Lichess public-API import.
@@ -95,3 +98,55 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 
 - Chess.com's current Game Review also uses an expected-points model, built from rating and engine eval. This project's model adds time control and clocks, and is evaluated in the open against simpler baselines.
 - Hyperparameter tuning moved log loss by < 0.001; data volume is the lever. That observation is what motivated the harvesting approach.
+
+
+## UI polish pass — 2026-10-25
+
+Implemented `docs/ui-plan.md` Steps 1–6 in order, within presentation files. Existing/concurrent review,
+model, fixture and Python changes in the working tree were preserved; this pass did not edit them.
+No git write commands were used.
+
+1. **Foundation:** surface/text/status tokens, spacing/radii/shadows/motion, consistent button states,
+   focus rings, Inter with system fallback, circular player initials, an original knight coach icon,
+   badge/evaluation transitions, and reduced-motion support (including react-chessboard).
+   Lichess Cburnett/Merida assets could not be downloaded because the asset host did not resolve.
+   Kept the built-in pieces; skipped the extra piece-set selector rather than exposing unavailable sets.
+2. **Import:** welcome/how-it-works screen, a legal 13-ply queen-sacrifice sample, last-five recent
+   games with safe localStorage access, W/L/D pills and clock icons, progress percentage/move count/ETA,
+   and removal of the obsolete server-down banner. Checked `api.ts`: health always reports availability.
+3. **Review:** board dimensions reserve space for the header and both player bars at desktop sizes,
+   larger evaluation text, taller graph with tooltip/crosshair and keyboard selection, compact coach
+   hierarchy/actions, summary accuracy columns, empty-label toggle, and persistent Start Review.
+4. **Sound:** original wood-like tap synthesis and softer chimes, nine events (including castling,
+   promotion, final position and illegal retry drops), sound on forward jumps, silence going backward,
+   and persisted volume. Lichess standard recordings were skipped because COPYING.md places the
+   other `public/sound` assets in the non-free exceptions; no recording was redistributed.
+5. **Understanding:** native top-layer label/metric popovers, keyboard help via a button or `?`,
+   a dismissible/persisted graph → move-list → Retry tour, and wording-only coach refinements.
+6. **Phone/finish:** width-constrained phone layout and compact player bars, fixed navigation/summary
+   actions, horizontal swipe navigation disabled throughout retry, System/Light/Dark tokens and live
+   system-theme updates, focus/ARIA improvements, description/theme-color/Open Graph metadata.
+   Corrected the displayed clock to use the latest completed move. README documents the new UI.
+
+Validation: lint, all 85 tests (5 files), and production build were run at every step. The unmodified
+`npm test` command initially passed every assertion but exited with Vitest's internal
+`[vitest-worker]: Timeout calling "onTaskUpdate"` error, twice. A worker-thread trial also failed to
+initialize Stockfish. Checks therefore use a temporary config and runner outside the repository:
+
+```sh
+cd web
+npm run lint && npm test -- --config /tmp/chesscoach-ui-vitest.config.mjs && npm run build
+```
+
+The temporary config extends the existing Vite config and selects a subclass of `VitestTestRunner`
+whose `onAfterRunTask` awaits the parent method and one `setImmediate`. This gives the fork time to
+process IPC between CPU-heavy parity cases. No assertions, test selection, or error checks are disabled;
+no test, dependency, engine, or repository config file was changed. The complete suite passes with this
+runner. The default runner limitation remains to be addressed separately if it reproduces elsewhere.
+Additional checks cover the sample's legality/checkmate, recent-history limits/deduplication and
+unavailable/corrupt storage, audio event routing, and text-token contrast in both themes.
+
+Screenshots were skipped: installed Chromium headless shell and Google Chrome both failed to launch
+in the restricted environment (process termination / SIGABRT). Existing images are preserved and
+identified as earlier UI in README; 1280×720 and 360px layouts have not received browser visual QA.
+No screenshot is claimed as current. Asset sources, licenses and fallbacks are in `web/public/CREDITS.md`.

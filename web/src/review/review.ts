@@ -7,8 +7,8 @@ import { combine, moveAccuracyPct, volatilityWeights } from './accuracy'
 import type { Book } from './book'
 import { cpOrMateProxy } from './features'
 import { parsePgn } from './pgn'
-import { estimateRating, phaseGrade, phaseOf, type RatingMeta } from './rating'
-import { detectPool, fromLichessScale, toLichessScale } from './ratings'
+import { estimateRating, MAX_SWING, phaseGrade, phaseOf, type RatingMeta } from './rating'
+import { detectPool, fromLichessScale, pyRound, toLichessScale } from './ratings'
 import {
   classifyTimeClass,
   gamePhaseFromHalfMoves,
@@ -425,7 +425,10 @@ export async function reviewGame(pgn: string, models: Models, analyse: AnalyseFn
     )
     if (est && pool !== 'lichess') {
       const e = est
-      est = { rating: fromLichessScale(e.rating, pool, timeClass), low: fromLichessScale(e.low, pool, timeClass), high: fromLichessScale(e.high, pool, timeClass), plays_like: fromLichessScale(e.plays_like, pool, timeClass) }
+      est = { rating: fromLichessScale(e.rating, pool, timeClass), low: fromLichessScale(e.low, pool, timeClass), high: fromLichessScale(e.high, pool, timeClass), plays_like: fromLichessScale(e.plays_like, pool, timeClass, -2) }
+      // Keep the ±400 single-game bound on the scale the player sees.
+      const own = side === 'white' ? wEloRaw : bEloRaw
+      est.plays_like = pyRound(Math.max(own - MAX_SWING, Math.min(own + MAX_SWING, est.plays_like)), -2)
     }
     summary[side] = {
       moves: mine.length,
