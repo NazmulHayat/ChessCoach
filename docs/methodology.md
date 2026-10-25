@@ -25,6 +25,8 @@ Two sets, with no game in both:
 
 The harvested set is huge and free, but it differs from the clean set in two ways: its evals come from a different search budget, and analysed games are self-selected. Trained on it alone, the model was slightly overconfident on the clean test set (e.g. predicting 64% where players scored 61%) and not significantly better than the clean-only model. Pretraining on it and then fine-tuning on the clean set (continuing the same boosted trees for 85 more rounds at a lower learning rate, early-stopped on clean games outside the test set) fixed that and beat both, significantly.
 
+**More pretraining data.** Pretraining on 25M harvested rows instead of 12M (then the same fine-tune) reached 0.5743 vs 0.5746 log loss on the test set: a paired difference of −0.0002 (95% CI −0.0011 to +0.0007). Not significant, so the 12M model stays.
+
 ## Training choices
 
 | Decision | Why |

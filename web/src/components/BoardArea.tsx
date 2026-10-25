@@ -107,14 +107,15 @@ export function BoardArea({ fen, input, inputSession, orientation, white, black,
   const [selected, setSelected] = useState<string | null>(null)
   useEffect(() => setSelected(null), [fen, input])
 
-  const targets = useMemo(() => {
+  const targetMoves = useMemo(() => {
     if (!input || !selected) return []
     try {
-      return new Chess(fen).moves({ square: selected as Square, verbose: true }).map((m) => m.to)
+      return new Chess(fen).moves({ square: selected as Square, verbose: true })
     } catch {
       return []
     }
   }, [fen, input, selected])
+  const targets = useMemo(() => targetMoves.map((m) => m.to as string), [targetMoves])
 
   const squareStyles = useMemo(() => {
     const s: Record<string, Record<string, string>> = {}
@@ -122,9 +123,18 @@ export function BoardArea({ fen, input, inputSession, orientation, white, black,
       for (const sq of [lastMove.from, lastMove.to]) s[sq] = { boxShadow: 'inset 0 0 0 999px var(--sq-highlight)' }
     }
     if (selected) s[selected] = { boxShadow: 'inset 0 0 0 999px var(--sq-select)' }
-    for (const t of targets) s[t] = { ...s[t], backgroundImage: 'radial-gradient(circle, var(--sq-dot) 22%, transparent 24%)' }
+    // Dot on empty targets, ring on captures (a dot would hide under the piece).
+    for (const m of targetMoves) {
+      const ring = m.captured !== undefined
+      s[m.to] = {
+        ...s[m.to],
+        backgroundImage: ring
+          ? 'radial-gradient(circle, transparent 60%, var(--sq-dot) 62%, var(--sq-dot) 74%, transparent 76%)'
+          : 'radial-gradient(circle, var(--sq-dot) 22%, transparent 24%)',
+      }
+    }
     return s
-  }, [lastMove, selected, targets])
+  }, [lastMove, selected, targetMoves])
 
   const myColor = input ? (input.side === 'white' ? 'w' : 'b') : null
   // react-chessboard can call drag/drop handlers from an earlier render; read the current values via refs.

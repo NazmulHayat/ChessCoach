@@ -9,12 +9,12 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-03 | Rule-based Chess.com-style move classifier (PGN → Stockfish → labels), golden tests. Archived. |
 | 2026-03 | Pivot to an expected-points (EP) model. Phase A (sample positions from a 26 GB Lichess dump), Phase B (Stockfish depth 17, FEN cache, resumable checkpoints, `safe_run` with disk/swap/heat guards), Phase C (LightGBM). Pilot on 3k rows. |
 | 2026-10-25 | Baseline evaluation, training fixes, Phase D review, parallel engines, web app, eval harvesting, pretrain + fine-tune (below). |
-
-| 2026-10-25 | Phase B continuous queue (measured +2%), Dockerfile (Stockfish 18 compiled in), Fly.io / Render configs, request limits. Label frequencies on 200 real games. |
-| 2026-10-25 | Coach: tactic hints (missed / allowed mate, hanging pieces, missed material) and engine main line; optional Claude explanations behind ANTHROPIC_API_KEY. |
-| 2026-10-25 | UI polish: move / capture / check sounds (Web Audio), captured material, flip button, settings (board theme, sounds), skeletons, server-down banner, error boundary, mobile check at 390 px. |
-| 2026-10-25 | Game rating estimate, opening / middlegame / endgame grades. |
 | 2026-10-25 | Great / Miss / Brilliant labels (multipv=2, SEE-based sacrifice check), Retry mode with server-side scoring of tried moves. |
+| 2026-10-25 | Game rating estimate, opening / middlegame / endgame grades. |
+| 2026-10-25 | UI polish: move / capture / check sounds (Web Audio), captured material, flip button, settings (board theme, sounds), skeletons, server-down banner, error boundary, mobile check at 390 px. |
+| 2026-10-25 | Coach: tactic hints (missed / allowed mate, hanging pieces, missed material) and engine main line; optional Claude explanations behind ANTHROPIC_API_KEY. |
+| 2026-10-25 | Pretrain on 25M harvested rows (2× data): not significantly better than the shipped 12M model, so not shipped. |
+| 2026-10-25 | Phase B continuous queue (measured +2%), Dockerfile (Stockfish 18 compiled in), Fly.io / Render configs, request limits. Label frequencies on 200 real games. |
 
 ## Key numbers
 
@@ -31,8 +31,9 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | Pretrain + fine-tune vs clean-only | −0.0043 log loss, 95% CI −0.0065 to −0.0021 (paired bootstrap over games) |
 | Bullet games | 0.586 vs 0.705 for the Lichess curve (−17%) |
 | Calibration | every 10-point bin within 1.5 points |
-| Training run | 12M rows, 734 trees, 252 s on a laptop |
-| App latency | full 62-move game reviewed at depth 17 in 8.1 s (4 engines) |
+| Training run | 12M rows, 734 trees, 252 s on a laptop; 25M rows, 1,353 trees, 978 s, 4.9 GB peak RAM |
+| 25M vs 12M pretraining (both fine-tuned) | 0.5743 vs 0.5746 log loss; paired difference −0.0002, 95% CI −0.0011 to +0.0007: no significant gain, 12M model kept |
+| App latency | full 62-move game at depth 17: 8.1 s with 4 engines and one line per position; 23.8 s after switching to two lines (multipv=2, needed for Great / Brilliant); 0.07 s on a repeat (FEN cache) |
 | Game rating estimate | LightGBM on 397k player-games (200k Lichess-analysed games), held out by game: blitz MAE 292 vs 362 median baseline (−19%), rapid 252 vs 322 (−22%), classical 188 vs 238, bullet 332 vs 376; data extraction + fit in about 3 minutes |
 | Special label frequencies | 200 random Lichess games, 13,971 moves, depth 17: Great 2.8%, Miss 1.7%, Brilliant 0.31%; stable across rating bands (Great 2.6–2.9%, Brilliant 0.25–0.53%) |
 | Phase B dispatch | continuous queue vs 256-row chunks: 8.91 → 9.09 positions/s (+2%, within run-to-run noise), 768 positions, 8 engines |
@@ -55,6 +56,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 11. **"Sacrifice" needs a counterfactual too.** A naive "piece left en prise" check calls every trapped piece a sacrifice. The SEE-based check compares the move against the safest legal alternative and only counts material the player chose to give up.
 12. **Drag-and-drop died after the first wrong retry.** Two react-chessboard quirks: dragging is wired up only when the board mounts (toggling `arePiecesDraggable` later leaves pieces undraggable), and its drop handler can be a closure from an earlier render. Fixed by keeping the board draggable for the whole retry session (remount per session) and reading the current move handler through a ref. Found with a scripted Playwright test that drags pieces.
 13. **One game's accuracy barely predicts rating.** Least squares on accuracy and error rates: blunder-rate-style features gave blitz MAE 341 vs 364 for guessing the median (r = 0.34). Adding accuracy in balanced positions and mean |eval| (separating "accurate because the game was easy" from "accurate in a fight") with a small LightGBM: MAE 292 (r = 0.59). Opponent rating left out on purpose, since matchmaking would leak it.
+14. **More pretraining data stopped helping.** Doubling the harvested pretraining set (12M → 25M rows, 1,353 trees, 978 s, 4.9 GB peak) gave 0.5743 vs 0.5746 on the clean test set after the same fine-tune, a −0.0002 difference with a 95% CI of −0.0011 to +0.0007. Not significant, so the smaller model stays (12.8 MB vs 22.5 MB). The limit is now the clean data and the features, not pretraining volume. Decided by the pre-registered rule: ship only on a significant paired-bootstrap gain.
 
 ## Product
 

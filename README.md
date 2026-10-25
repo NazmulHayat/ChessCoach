@@ -30,12 +30,12 @@ Where the 12M positions came from: about 1 in 9 games in the Lichess dump was al
 
 ## The Game Review app
 
-| Import | Summary |
-|---|---|
-| ![Import screen](docs/images/import.png) | ![Summary screen](docs/images/summary.png) |
+| Import | Summary | Retry |
+|---|---|---|
+| ![Import screen](docs/images/import.png) | ![Summary screen](docs/images/summary.png) | ![Retry mode](docs/images/retry.png) |
 
 - **Import** from a Chess.com or Lichess username (recent games, no login), or paste a PGN.
-- **Live analysis**: Stockfish runs on a pool of parallel engines (a 60-move game at depth 17 in about 8 s); progress streams to the page.
+- **Live analysis**: Stockfish runs on a pool of parallel engines with the top two lines per position (a 62-move game at depth 17 in about 24 s with 4 engines; re-opening a game is instant from the cache); progress streams to the page.
 - **Summary**: accuracy for both players, an estimated **game rating** (what rating you played like, fitted on 397k Lichess player-games: blitz error 292 points vs 362 for a blind guess), label counts, **opening / middlegame / endgame grades**, key moments, advantage graph.
 - **Review**: board with move badges, last-move highlight, best-move arrows, move animation, captured pieces and material lead in the player bars; eval bar that switches between **Chances** (EP) and raw **Engine** score; a coach that explains each move and points out where an eval-only review would disagree; clickable graph; move list; flip button; keyboard (← → Home End, Space to play, F to flip).
 - **Settings**: four board themes and move sounds (synthesised with Web Audio, no audio files), saved per browser. Works on phones (single-column layout, tap-to-move in retry mode).
@@ -133,7 +133,7 @@ Pipeline details: [`ep_model/README.md`](ep_model/README.md). Design decisions a
 
 ## Roadmap
 
-- Pretrain on all 46M harvested positions (memory permitting) and finish the Stockfish test set.
+- More clean Stockfish data (finish Phase B) and new features: doubling the harvested pretraining set (12M → 25M) gave no significant gain (−0.0002, 95% CI −0.0011 to +0.0007).
 
 ## Credits
 
