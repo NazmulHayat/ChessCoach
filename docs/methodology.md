@@ -78,6 +78,12 @@ Priority: book > brilliant > great > miss > the EP band label. The band label is
 
 **multipv=2 cost**, measured on 120 positions at depth 17 (one thread): 0.414 → 0.605 s per position (+46%). The top line's eval moves slightly (median 7.5 cp, 90th percentile 27 cp) compared with the single-line search the model was trained on.
 
+### Coach text
+
+The coach is template text filled from the review. For moves that lost something, a tactic hint is added when one of these checks fires (in this order, `ep_model/phase_d/tactics.py`): **missed mate** (the mover had mate and the move doesn't keep a mate), **allows mate** (the opponent has mate after the move), **hangs a piece** (static exchange after the move wins the opponent at least a pawn net of what the move captured), **missed material** (the best move is a capture that keeps ≥ 2 points after the best recapture). The best move's main line (first 6 plies of the principal variation) is shown under it.
+
+**AI notes (optional).** With `ANTHROPIC_API_KEY` set on the server, an *Explain* button sends Claude (`claude-opus-5-5`, low effort) the facts the review already computed (FEN, move, label, chances, best line, tactic hint) and asks for 2-3 plain sentences that use only those facts. Notes are cached per move and capped at 30 per game; failures (bad key, rate limit, refusal) show a short message in the coach bubble. Without a key the button doesn't appear.
+
 ### Retry mode
 
 On a mistake, miss or blunder, the board takes a move for the side that erred (drag, or tap a piece then a square; chess.js checks legality). The engine's best move is accepted instantly. Any other move is scored on the server like a played move (same context row as the real move, eval of the position after the attempt) and counts as correct if it loses ≤ 2% EP against the best move. After two wrong tries the best line is shown. Reviews are kept in a 200-entry in-memory LRU for this; if the server has restarted, the app falls back to accepting the engine's top move (or the second-best if it is within 2%).

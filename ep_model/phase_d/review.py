@@ -44,6 +44,7 @@ from ep_model.phase_d.predictor import EPModel
 from ep_model.phase_d.rating_estimate import estimate_rating, move_accuracy, phase_grade, phase_of
 from ep_model.phase_d.ratings import detect_pool, from_lichess_scale, to_lichess_scale
 from ep_model.phase_d.special import is_brilliant, is_great, is_miss, sacrifice_points, sacrificed_piece, thresholds_for
+from ep_model.phase_d.tactics import tactic_hint
 
 LOG = logging.getLogger(__name__)
 
@@ -313,6 +314,11 @@ def review_game(
                 ):
                     special = "miss"
             ep_label = special or base_label
+            tactic = (
+                tactic_hint(before["fen"], mv.uci(), before["best_uci"], before["mate_stm"], after["mate_stm"])
+                if ep_label in BAD_LABELS
+                else None
+            )
             best_mv = chess.Move.from_uci(before["best_uci"]) if before["best_uci"] else None
             moves.append(
                 {
@@ -336,6 +342,7 @@ def review_game(
                     "sacrifice": sac,
                     "sacrifice_piece": sac_piece,
                     "base_label": base_label,
+                    "tactic": tactic,
                     "cp_before": before["cp_stm"],
                     "ep_best": ep_best,
                     "ep_after": ep_after,

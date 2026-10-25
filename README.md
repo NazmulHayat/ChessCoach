@@ -41,6 +41,7 @@ Where the 12M positions came from: about 1 in 9 games in the Lichess dump was al
 - **Settings**: four board themes and move sounds (synthesised with Web Audio, no audio files), saved per browser. Works on phones (single-column layout, tap-to-move in retry mode).
 - **Labels** use Chess.com's published expected-points bands: best (engine move), excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%, plus book moves from a polyglot opening book.
 - **Great / Miss / Brilliant**: our own documented rules on the engine's top two lines. Great = the only good move; Miss = gives back most of the opponent's mistake; Brilliant = a sound sacrifice (static-exchange check) that wasn't needed to stay winning. Thresholds scale with rating. Rules in [`docs/methodology.md`](docs/methodology.md#great-miss-and-brilliant).
+- **Coach**: template text from the review numbers, with tactic hints computed by python-chess ("hangs the knight on d5", "allows mate in 2", "missed Nxd4, winning the queen") and the engine's main line. Optional **AI notes**: set `ANTHROPIC_API_KEY` and an *Explain* button asks Claude to explain a move from the computed facts only. Off by default; everything else works without a key.
 - **Retry**: on a mistake, miss or blunder, play a better move on the board (drag or tap). The server scores your attempt with the same EP model; within 2% of the best move counts. **Next mistake** steps through your own errors.
 
 ## Quick start

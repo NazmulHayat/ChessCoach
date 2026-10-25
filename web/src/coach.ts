@@ -52,11 +52,13 @@ export function moveCoach(review: Review, move: ReviewMove): CoachText {
     body += move.second_san && move.ep_second !== null ? `; the next best, ${move.second_san}, gave ${pct(move.ep_second)}.` : '.'
   } else if (label === 'miss') {
     body = `${opp} had just slipped, and this gives most of it back: chances ${pct(move.ep_best)} → ${pct(move.ep_after)}.`
+    if (move.tactic) body = `${move.san} ${move.tactic}. ${body}`
     if (move.best_san) body += ` ${move.best_san} kept the advantage.`
   } else if (label === 'best') {
     body = `${who}'s chances stay at ${pct(move.ep_after)}.`
   } else if (BAD_LABELS.includes(label)) {
     body = `${who}'s chances dropped from ${pct(move.ep_best)} to ${pct(move.ep_after)}.`
+    if (move.tactic) body = `${move.san} ${move.tactic}. ${body}`
     if (move.best_san) body += ` ${move.best_san} was best.`
   } else {
     body = `${who}'s chances: ${pct(move.ep_after)}.`

@@ -34,6 +34,7 @@ export interface ReviewMove {
   sacrifice: number
   sacrifice_piece: string | null
   base_label: Label // EP band label before Great / Miss / Brilliant
+  tactic: string | null // e.g. "hangs the knight on f6", "allows mate in 2"
   ep_best: number
   ep_after: number
   ep_loss: number

@@ -10,7 +10,7 @@ async function errorDetail(r: Response): Promise<string> {
 }
 
 /** Engine depth and worker count if the server is up, else null. */
-export async function health(): Promise<{ depth: number; workers: number } | null> {
+export async function health(): Promise<{ depth: number; workers: number; explain: boolean } | null> {
   try {
     const r = await fetch('/api/health')
     return r.ok ? r.json() : null
@@ -84,4 +84,15 @@ export async function retryMove(reviewId: string, ply: number, uci: string): Pro
   if (r.status === 410) throw new GoneError(await errorDetail(r))
   if (!r.ok) throw new Error(await errorDetail(r))
   return r.json()
+}
+
+/** Claude-written note on one move (only when the server has ANTHROPIC_API_KEY). */
+export async function explainMove(reviewId: string, ply: number): Promise<string> {
+  const r = await fetch('/api/explain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ review_id: reviewId, ply }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r))
+  return (await r.json()).text
 }

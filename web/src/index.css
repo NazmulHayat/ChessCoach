@@ -150,6 +150,9 @@ button { font: inherit; color: inherit; }
 .bubble-title { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 15px; margin-bottom: 3px; }
 .bubble-body { color: #2b3038; }
 .bubble-line { margin-top: 6px; font: 600 13px/1.45 ui-monospace, Menlo, monospace; color: #3a4250; }
+.bubble-ai { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e6e9ee; font-size: 13.5px; color: #2b3038; }
+.ai-tag { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 4px; background: #e8eff9; color: #3570b8; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.ai-error { color: #b3261e; }
 .coach-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .coach-actions .btn-ghost { border-color: #d5dae2; color: #3a4250; }
 .coach-actions .btn-ghost:hover { background: #eef1f5; color: #1f2329; }

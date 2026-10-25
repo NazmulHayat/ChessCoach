@@ -10,6 +10,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-03 | Pivot to an expected-points (EP) model. Phase A (sample positions from a 26 GB Lichess dump), Phase B (Stockfish depth 17, FEN cache, resumable checkpoints, `safe_run` with disk/swap/heat guards), Phase C (LightGBM). Pilot on 3k rows. |
 | 2026-10-25 | Baseline evaluation, training fixes, Phase D review, parallel engines, web app, eval harvesting, pretrain + fine-tune (below). |
 
+| 2026-10-25 | Coach: tactic hints (missed / allowed mate, hanging pieces, missed material) and engine main line; optional Claude explanations behind ANTHROPIC_API_KEY. |
 | 2026-10-25 | UI polish: move / capture / check sounds (Web Audio), captured material, flip button, settings (board theme, sounds), skeletons, server-down banner, error boundary, mobile check at 390 px. |
 | 2026-10-25 | Game rating estimate, opening / middlegame / endgame grades. |
 | 2026-10-25 | Great / Miss / Brilliant labels (multipv=2, SEE-based sacrifice check), Retry mode with server-side scoring of tried moves. |
@@ -33,7 +34,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | App latency | full 62-move game reviewed at depth 17 in 8.1 s (4 engines) |
 | Game rating estimate | LightGBM on 397k player-games (200k Lichess-analysed games), held out by game: blitz MAE 292 vs 362 median baseline (−19%), rapid 252 vs 322 (−22%), classical 188 vs 238, bullet 332 vs 376; data extraction + fit in about 3 minutes |
 | multipv=2 cost | 0.414 → 0.605 s/position at depth 17 (+46%); top-line eval drift median 7.5 cp, p90 27 cp (120 positions) |
-| Tests | 37 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, harvest parsing) |
+| Tests | 49 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
 
 ## Problems solved
 
@@ -56,6 +57,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 - FastAPI server: streamed analysis (server-sent events), parallel engine pool with FEN cache, Chess.com and Lichess public-API import.
 - React + Vite + TypeScript UI modelled on Chess.com's Game Review layout: board with move badges and best-move arrows, eval bar (EP or engine), coach text, clickable advantage graph, move list, keyboard controls, summary with accuracy, label counts and key moments.
 - Labels follow Chess.com's published expected-points bands; book moves from a polyglot opening book; Great / Miss / Brilliant from documented rules on the engine's top two lines.
+- Coach: rule-based tactic hints from python-chess static exchange and mate scores; optional Claude-written notes grounded only in computed facts, off without an API key.
 - Polish: synthesised move sounds (no audio assets), captured material and lead per player, four board themes, loading skeletons, error states (server unreachable, failed analysis with one-click retry, React error boundary), mobile layout.
 - Retry mode: replay a mistake on the board, judged by the same EP model; "Next mistake" steps through your own errors.
 

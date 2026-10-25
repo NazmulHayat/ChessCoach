@@ -9,6 +9,7 @@ API:
   POST /api/review                 {pgn, white_elo?, black_elo?, rating_pool?, depth?} → server-sent events
                                    (event: progress {done, total} …, then event: result {review} or event: error)
   POST /api/retry                  {review_id, ply, uci} → is this move as good as the engine's? (retry mode)
+  POST /api/explain                {review_id, ply} → Claude-written note on a move (only with ANTHROPIC_API_KEY)
   GET  /api/games/chesscom/{user}  recent Chess.com games (public API)
   GET  /api/games/lichess/{user}   recent Lichess games (public API)
 """
@@ -38,6 +39,7 @@ from pydantic import BaseModel, Field
 
 from ep_model.phase_a.rowgen import classify_time_class, parse_time_control
 from ep_model.phase_b.augment_evals import load_policy
+from ep_model.phase_d import explain
 from ep_model.phase_d.engine_pool import EnginePool
 from ep_model.phase_d.predictor import EPModel
 from ep_model.phase_d.review import review_game, score_attempt
@@ -68,7 +70,14 @@ _reviews_lock = threading.Lock()
 def _remember_review(result: dict[str, Any]) -> str:
     rid = uuid.uuid4().hex
     with _reviews_lock:
-        REVIEWS[rid] = {"rows": result.pop("_rows"), "moves": result["moves"], "depth": result["engine_depth"]}
+        REVIEWS[rid] = {
+            "rows": result.pop("_rows"),
+            "moves": result["moves"],
+            "depth": result["engine_depth"],
+            "headers": result["headers"],
+            "elos": {"white": result["white_elo"], "black": result["black_elo"]},
+            "explanations": {},
+        }
         while len(REVIEWS) > REVIEWS_MAX:
             REVIEWS.popitem(last=False)
     return rid
@@ -123,7 +132,7 @@ def _elo_or_none(headers: chess.pgn.Headers, key: str) -> int | None:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "depth": STATE.get("depth"), "workers": CONFIG["workers"]}
+    return {"ok": True, "depth": STATE.get("depth"), "workers": CONFIG["workers"], "explain": explain.enabled()}
 
 
 @app.post("/api/review")
@@ -198,6 +207,38 @@ async def retry(req: RetryRequest) -> dict[str, Any]:
         return await asyncio.get_running_loop().run_in_executor(None, work)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+EXPLAIN_PER_REVIEW = 30
+
+
+class ExplainRequest(BaseModel):
+    review_id: str = Field(min_length=1, max_length=64)
+    ply: int = Field(ge=1, le=2000)
+
+
+@app.post("/api/explain")
+async def explain_move(req: ExplainRequest) -> dict[str, Any]:
+    if not explain.enabled():
+        raise HTTPException(status_code=404, detail="Explanations are off (no ANTHROPIC_API_KEY on the server).")
+    with _reviews_lock:
+        saved = REVIEWS.get(req.review_id)
+    if saved is None:
+        raise HTTPException(status_code=410, detail="This review is no longer on the server; analyse the game again.")
+    if req.ply > len(saved["moves"]):
+        raise HTTPException(status_code=400, detail="No such move.")
+    cache = saved["explanations"]
+    if req.ply in cache:
+        return {"ply": req.ply, "text": cache[req.ply]}
+    if len(cache) >= EXPLAIN_PER_REVIEW:
+        raise HTTPException(status_code=429, detail="Explanation limit reached for this game.")
+    move = saved["moves"][req.ply - 1]
+    try:
+        text = await explain.explain_move(move, saved["headers"], saved["elos"][move["mover"]])
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from None
+    cache[req.ply] = text
+    return {"ply": req.ply, "text": text}
 
 
 def _result_for(white: str, black: str, user: str, result: str) -> str:

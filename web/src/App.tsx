@@ -1,6 +1,6 @@
 import { Chess } from 'chess.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GoneError, health, retryMove, streamReview } from './api'
+import { explainMove, GoneError, health, retryMove, streamReview } from './api'
 import { moveCoach, retryCoach, startCoach, summaryCoach } from './coach'
 import { BoardArea, type BoardInput, type PlayerInfo } from './components/BoardArea'
 import { Coach } from './components/Coach'
@@ -81,12 +81,24 @@ export default function App() {
   const [retry, setRetry] = useState<RetryState | null>(null)
   const [settings, updateSettings] = useSettings()
   const [serverDown, setServerDown] = useState(false)
+  const [explainOn, setExplainOn] = useState(false)
+  const [notes, setNotes] = useState<Record<number, { text?: string; loading?: boolean; error?: string }>>({})
   const [lastPgn, setLastPgn] = useState<{ pgn: string; side?: Side } | null>(null)
   const abort = useRef<AbortController | null>(null)
   const prevPly = useRef(0)
 
   useEffect(() => {
-    health().then((h) => setServerDown(h === null))
+    health().then((h) => {
+      setServerDown(h === null)
+      setExplainOn(!!h?.explain)
+    })
+  }, [])
+
+  const explainPly = useCallback((reviewId: string, p: number) => {
+    setNotes((n) => ({ ...n, [p]: { loading: true } }))
+    explainMove(reviewId, p)
+      .then((text) => setNotes((n) => ({ ...n, [p]: { text } })))
+      .catch((e) => setNotes((n) => ({ ...n, [p]: { error: e instanceof Error ? e.message : String(e) } })))
   }, [])
 
   const total = review ? review.moves.length : 0
@@ -101,6 +113,7 @@ export default function App() {
     abort.current = ctrl
     setError(null)
     setReview(null)
+    setNotes({})
     setPly(0)
     setPending(previewHeaders(pgn))
     setProgress({ done: 0, total: 0 })
@@ -418,13 +431,18 @@ export default function App() {
                   )}
                 </Coach>
               ) : (
-                <Coach text={move ? moveCoach(review, move) : startCoach(review)} label={move?.ep_label}>
+                <Coach text={move ? moveCoach(review, move) : startCoach(review)} label={move?.ep_label} ai={move ? notes[move.ply] ?? null : null}>
                   {canRetry && (
                     <button type="button" className="btn btn-primary btn-sm" onClick={() => startRetry(ply)}>Retry</button>
                   )}
                   {myMistakes.length > 0 && (
                     <button type="button" className="btn btn-ghost btn-sm" onClick={nextMistake} title={`Your mistakes as ${me}`}>
                       Next mistake
+                    </button>
+                  )}
+                  {explainOn && review.review_id && move && move.ep_label !== 'book' && !notes[move.ply] && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => explainPly(review.review_id as string, move.ply)} title="Ask Claude to explain this move">
+                      Explain
                     </button>
                   )}
                 </Coach>
