@@ -90,6 +90,17 @@ export function ImportPanel({ onAnalyze }: { onAnalyze: (pgn: string, you?: 'whi
             </button>
           </form>
           {error && <div className="error">{error}</div>}
+          {loading && (
+            <div className="game-list" aria-hidden>
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="game-item sk-item">
+                  <span className="sk sk-dot" />
+                  <span className="game-main"><span className="sk sk-text" /><span className="sk sk-text short" /></span>
+                  <span className="sk sk-date" />
+                </div>
+              ))}
+            </div>
+          )}
           {games && games.length === 0 && <div className="muted pad">No recent standard games found.</div>}
           {games && games.length > 0 && (
             <div className="game-list">

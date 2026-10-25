@@ -9,8 +9,23 @@ async function errorDetail(r: Response): Promise<string> {
   }
 }
 
+/** Engine depth and worker count if the server is up, else null. */
+export async function health(): Promise<{ depth: number; workers: number } | null> {
+  try {
+    const r = await fetch('/api/health')
+    return r.ok ? r.json() : null
+  } catch {
+    return null
+  }
+}
+
 export async function fetchGames(site: 'chesscom' | 'lichess', user: string): Promise<GameListItem[]> {
-  const r = await fetch(`/api/games/${site}/${encodeURIComponent(user.trim())}`)
+  let r: Response
+  try {
+    r = await fetch(`/api/games/${site}/${encodeURIComponent(user.trim())}`)
+  } catch {
+    throw new Error('Can’t reach the ChessCoach server. Is it running?')
+  }
   if (!r.ok) throw new Error(await errorDetail(r))
   return r.json()
 }
@@ -21,12 +36,18 @@ export async function streamReview(
   onProgress: (done: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<Review> {
-  const r = await fetch('/api/review', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pgn }),
-    signal,
-  })
+  let r: Response
+  try {
+    r = await fetch('/api/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pgn }),
+      signal,
+    })
+  } catch (e) {
+    if (signal?.aborted) throw e
+    throw new Error('Can’t reach the ChessCoach server. Is it running?')
+  }
   if (!r.ok || !r.body) throw new Error(await errorDetail(r))
 
   const reader = r.body.pipeThrough(new TextDecoderStream()).getReader()

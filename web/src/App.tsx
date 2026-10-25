@@ -1,6 +1,6 @@
 import { Chess } from 'chess.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { GoneError, retryMove, streamReview } from './api'
+import { GoneError, health, retryMove, streamReview } from './api'
 import { moveCoach, retryCoach, startCoach, summaryCoach } from './coach'
 import { BoardArea, type BoardInput, type PlayerInfo } from './components/BoardArea'
 import { Coach } from './components/Coach'
@@ -8,8 +8,11 @@ import { Controls } from './components/Controls'
 import { Graph } from './components/Graph'
 import { ImportPanel } from './components/ImportPanel'
 import { MoveList } from './components/MoveList'
+import { SettingsMenu } from './components/SettingsMenu'
 import { Summary } from './components/Summary'
 import { engineScore, engineWhiteShare, pct } from './format'
+import { play, soundForSan } from './lib/sound'
+import { BOARD_THEMES, useSettings } from './lib/settings'
 import { BAD_LABELS, GRAPH_LABELS, RETRY_LABELS, TOP_LABELS } from './labels'
 import type { Mode, RetryResult, Review, ReviewMove, Side } from './types'
 
@@ -76,7 +79,15 @@ export default function App() {
   const [pending, setPending] = useState<Record<string, string>>({})
   const [you, setYou] = useState<Side | null>(null)
   const [retry, setRetry] = useState<RetryState | null>(null)
+  const [settings, updateSettings] = useSettings()
+  const [serverDown, setServerDown] = useState(false)
+  const [lastPgn, setLastPgn] = useState<{ pgn: string; side?: Side } | null>(null)
   const abort = useRef<AbortController | null>(null)
+  const prevPly = useRef(0)
+
+  useEffect(() => {
+    health().then((h) => setServerDown(h === null))
+  }, [])
 
   const total = review ? review.moves.length : 0
 
@@ -84,6 +95,7 @@ export default function App() {
     abort.current?.abort()
     setYou(side ?? null)
     setOrientation(side ?? 'white')
+    setLastPgn({ pgn, side })
     setRetry(null)
     const ctrl = new AbortController()
     abort.current = ctrl
@@ -96,6 +108,7 @@ export default function App() {
     try {
       const r = await streamReview(pgn, (done, t) => setProgress({ done, total: t }), ctrl.signal)
       setReview(r)
+      setServerDown(false)
       setStage('summary')
     } catch (e) {
       if (ctrl.signal.aborted) return
@@ -114,6 +127,16 @@ export default function App() {
     })
   }, [review])
 
+  const flip = useCallback(() => setOrientation((o) => (o === 'white' ? 'black' : 'white')), [])
+
+  // Move sounds when stepping forward one move (arrow, autoplay, next button).
+  useEffect(() => {
+    const prev = prevPly.current
+    prevPly.current = ply
+    if (!review || !settings.sounds || stage !== 'review' || ply !== prev + 1) return
+    play(soundForSan(review.moves[ply - 1].san))
+  }, [ply, review, settings.sounds, stage])
+
   // Keyboard: ← → Home End, Space play, F flip.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -126,13 +149,13 @@ export default function App() {
       else if (e.key === 'Home') go(0)
       else if (e.key === 'End') go(total)
       else if (e.key === ' ') setPlaying((p) => !p)
-      else if (e.key.toLowerCase() === 'f') setOrientation((o) => (o === 'white' ? 'black' : 'white'))
+      else if (e.key.toLowerCase() === 'f') flip()
       else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [review, stage, ply, total, go])
+  }, [review, stage, ply, total, go, flip])
 
   // Autoplay.
   useEffect(() => {
@@ -168,12 +191,15 @@ export default function App() {
     const tries = retry.tries + 1
     const base = { ply: retry.ply, tries, attempt: { from, to } }
     setRetry({ ...base, phase: 'checking', fen: chess.fen() })
-    const finish = (result: RetryResult) =>
+    if (settings.sounds) play(soundForSan(san))
+    const finish = (result: RetryResult) => {
+      if (settings.sounds) setTimeout(() => play(result.correct ? 'correct' : 'wrong'), 150)
       setRetry((cur) => {
         if (!cur || cur.ply !== base.ply || cur.phase !== 'checking') return cur
         if (result.correct) return { ...base, phase: 'correct', fen: chess.fen(), result }
         return { ...base, phase: tries >= 2 ? 'solution' : 'wrong', fen: m.fen_before, result }
       })
+    }
     if (uci === m.best_uci || !review.review_id) {
       finish(localRetryResult(m, uci, san))
     } else {
@@ -185,7 +211,7 @@ export default function App() {
         })
     }
     return true
-  }, [review, retry])
+  }, [review, retry, settings.sounds])
 
   const me: Side = you ?? orientation
   const myMistakes = useMemo(
@@ -272,12 +298,21 @@ export default function App() {
           <img src="/favicon.svg" alt="" width={26} height={26} />
           <span>ChessCoach</span>
         </div>
-        {review && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setStage('import'); setPlaying(false) }}>
-            New game
-          </button>
-        )}
+        <div className="topbar-actions">
+          {review && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setStage('import'); setPlaying(false); setRetry(null) }}>
+              New game
+            </button>
+          )}
+          <SettingsMenu settings={settings} onChange={updateSettings} />
+        </div>
       </header>
+      {serverDown && (
+        <div className="server-down" role="alert">
+          Can’t reach the analysis server. Start it with <code>python -m ep_model.phase_d.server</code>, then{' '}
+          <button type="button" className="link-btn" onClick={() => health().then((h) => setServerDown(h === null))}>check again</button>.
+        </div>
+      )}
 
       <main className="layout">
         <section className="left">
@@ -293,6 +328,7 @@ export default function App() {
             arrow={arrow}
             whiteShare={whiteShare}
             evalText={evalText}
+            colors={BOARD_THEMES[settings.theme]}
           />
         </section>
 
@@ -316,7 +352,14 @@ export default function App() {
 
           {stage === 'import' && (
             <>
-              {error && <div className="error banner">{error}</div>}
+              {error && (
+                <div className="error banner" role="alert">
+                  <span>{error}</span>
+                  {lastPgn && (
+                    <button type="button" className="link-btn" onClick={() => analyze(lastPgn.pgn, lastPgn.side)}>Try again</button>
+                  )}
+                </div>
+              )}
               <ImportPanel onAnalyze={analyze} />
             </>
           )}
@@ -334,6 +377,11 @@ export default function App() {
               <button type="button" className="btn btn-ghost" onClick={() => { abort.current?.abort(); setStage('import') }}>
                 Cancel
               </button>
+              <div className="skeleton-block" aria-hidden>
+                <div className="sk sk-graph" />
+                <div className="sk-row"><div className="sk sk-acc" /><div className="sk sk-acc" /></div>
+                {Array.from({ length: 5 }, (_, i) => <div key={i} className="sk sk-line" />)}
+              </div>
             </div>
           )}
 
@@ -391,6 +439,7 @@ export default function App() {
                 onNext={() => go(ply + 1)}
                 onLast={() => go(total)}
                 onTogglePlay={() => setPlaying((p) => !p)}
+                onFlip={flip}
                 playing={playing}
               />
               <div className="panel-actions two">

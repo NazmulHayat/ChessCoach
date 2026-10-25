@@ -4,6 +4,7 @@ interface Props {
   onNext: () => void
   onLast: () => void
   onTogglePlay: () => void
+  onFlip: () => void
   playing: boolean
 }
 
@@ -13,7 +14,7 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 )
 
-export function Controls({ onFirst, onPrev, onNext, onLast, onTogglePlay, playing }: Props) {
+export function Controls({ onFirst, onPrev, onNext, onLast, onTogglePlay, onFlip, playing }: Props) {
   return (
     <div className="controls">
       <button type="button" onClick={onFirst} aria-label="First move" title="First (Home)">
@@ -30,6 +31,9 @@ export function Controls({ onFirst, onPrev, onNext, onLast, onTogglePlay, playin
       </button>
       <button type="button" onClick={onLast} aria-label="Last move" title="Last (End)">
         <Icon d="M16 5h2v14h-2zM4 5v14l11-7z" />
+      </button>
+      <button type="button" className="ctl-flip" onClick={onFlip} aria-label="Flip board" title="Flip board (F)">
+        <Icon d="M7 3 3 7h3v10h2V7h3zm10 18 4-4h-3V7h-2v10h-3z" />
       </button>
     </div>
   )

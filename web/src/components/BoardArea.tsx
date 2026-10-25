@@ -3,6 +3,7 @@ import { createContext, forwardRef, useContext, useEffect, useMemo, useRef, useS
 import { Chessboard } from 'react-chessboard'
 import type { CustomSquareProps, Piece, Square } from 'react-chessboard/dist/chessboard/types'
 import { initials } from '../format'
+import { capturedFrom, type Captured, type PieceType } from '../lib/material'
 import type { Label, Side } from '../types'
 import { LabelIcon } from './LabelIcon'
 
@@ -35,12 +36,42 @@ const BadgeSquare = forwardRef<HTMLDivElement, CustomSquareProps>(function Badge
   )
 })
 
-function PlayerBar({ p }: { p: PlayerInfo }) {
+// Captured opponent pieces: filled glyphs (U+FE0E keeps ♟ from turning into an emoji), coloured per side in CSS.
+const GLYPH: Record<PieceType, string> = { q: '♛\uFE0E', r: '♜\uFE0E', b: '♝\uFE0E', n: '♞\uFE0E', p: '♟\uFE0E' }
+
+function CapturedPieces({ side, cap }: { side: Side; cap: Captured }) {
+  const theirs = side === 'white' ? 'black' : 'white'
+  const groups: PieceType[][] = []
+  for (const t of cap.pieces) {
+    const last = groups[groups.length - 1]
+    if (last && last[0] === t) last.push(t)
+    else groups.push([t])
+  }
+  return (
+    <span className="captured" aria-label={`Captured: ${cap.pieces.join(' ') || 'none'}`}>
+      {groups.map((g, i) => (
+        <span key={i} className="cap-group">
+          {g.map((t, j) => (
+            <span key={j} className={`cap-piece cap-${theirs}`}>{GLYPH[t]}</span>
+          ))}
+        </span>
+      ))}
+      {cap.lead > 0 && <span className="cap-lead">+{cap.lead}</span>}
+    </span>
+  )
+}
+
+function PlayerBar({ p, cap }: { p: PlayerInfo; cap: Captured }) {
   return (
     <div className="player-bar">
       <div className={`avatar ${p.side === 'white' ? 'avatar-w' : ''}`}>{initials(p.name)}</div>
-      <span className="player-name">{p.name}</span>
-      {p.elo !== null && <span className="player-elo">({p.elo})</span>}
+      <div className="player-id">
+        <div className="player-line">
+          <span className="player-name">{p.name}</span>
+          {p.elo !== null && <span className="player-elo">({p.elo})</span>}
+        </div>
+        <CapturedPieces side={p.side} cap={cap} />
+      </div>
       <span className={`clock ${p.side === 'white' ? 'clock-w' : ''}`}>{p.clock ?? '—'}</span>
     </div>
   )
@@ -67,9 +98,11 @@ interface Props {
   arrow: { from: string; to: string } | null
   whiteShare: number
   evalText: string
+  colors?: { light: string; dark: string }
 }
 
-export function BoardArea({ fen, input, inputSession, orientation, white, black, lastMove, badge, arrow, whiteShare, evalText }: Props) {
+export function BoardArea({ fen, input, inputSession, orientation, white, black, lastMove, badge, arrow, whiteShare, evalText, colors }: Props) {
+  const captured = useMemo(() => capturedFrom(fen), [fen])
   // Click-to-move (touch friendly): first click picks a piece, second picks the target.
   const [selected, setSelected] = useState<string | null>(null)
   useEffect(() => setSelected(null), [fen, input])
@@ -131,7 +164,7 @@ export function BoardArea({ fen, input, inputSession, orientation, white, black,
 
   return (
     <div className={`board-area ${input ? 'board-input' : ''}`}>
-      <PlayerBar p={top} />
+      <PlayerBar p={top} cap={captured[top.side]} />
       <div className="board-row">
         <div className={`eval-bar ${orientation === 'black' ? 'eval-flipped' : ''}`} aria-label={`Evaluation ${evalText}`}>
           <div className="eval-fill" style={{ height: `${bottomShare * 100}%` }} />
@@ -154,18 +187,18 @@ export function BoardArea({ fen, input, inputSession, orientation, white, black,
               }}
               onSquareClick={onSquareClick}
               areArrowsAllowed={false}
-              animationDuration={180}
+              animationDuration={200}
               customArrows={arrows}
               customSquare={BadgeSquare}
               customSquareStyles={squareStyles}
-              customDarkSquareStyle={{ backgroundColor: 'var(--sq-dark)' }}
-              customLightSquareStyle={{ backgroundColor: 'var(--sq-light)' }}
+              customDarkSquareStyle={{ backgroundColor: colors?.dark ?? 'var(--sq-dark)' }}
+              customLightSquareStyle={{ backgroundColor: colors?.light ?? 'var(--sq-light)' }}
               customBoardStyle={{ borderRadius: '4px', boxShadow: '0 6px 24px rgba(0,0,0,.35)' }}
             />
           </BadgeContext.Provider>
         </div>
       </div>
-      <PlayerBar p={bottom} />
+      <PlayerBar p={bottom} cap={captured[bottom.side]} />
     </div>
   )
 }
