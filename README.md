@@ -28,6 +28,21 @@ python -m ep_model.phase_d.review game.pgn --html review.html
 
 Place Lichess `*.pgn.zst` under `ep_model/raw/` (see `ep_model/README.md`).
 
+## Game Review web app
+
+Chess.com-style review UI on top of the EP model: import a game (Chess.com or Lichess username, or paste a PGN), watch it get analysed, then step through it with an eval bar (your chances or raw engine), move badges, best-move arrows, a coach explaining every move, a clickable advantage graph and a summary with accuracy and label counts.
+
+```bash
+cd web && npm install && npm run build && cd ..   # once, or after frontend changes
+python -m ep_model.phase_d.server                 # http://127.0.0.1:8000
+# lighter engine pass while something else is using the CPU:
+python -m ep_model.phase_d.server --depth 12 --workers 2
+```
+
+Frontend dev with hot reload: run the server, then `cd web && npm run dev` (Vite proxies `/api` to port 8000).
+
+Labels follow Chess.com's published expected-points bands (best / excellent < 2% / good < 5% / inaccuracy < 10% / mistake < 20% / blunder), plus book moves from a polyglot opening book. Chess.com ratings are mapped to the Lichess scale the model was trained on (approximate). Pieces: cburnett set (open licence).
+
 ## Archived code
 
 Older move-classification / docs / one-off scripts are under `archive/` (see `archive/README.md`). They stay in git for reference; Cursor ignores that folder via `.cursorignore`.

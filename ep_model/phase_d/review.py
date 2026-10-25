@@ -6,6 +6,9 @@ move actually played, the difference (EP loss), and a label from EP loss. Both E
 opponent-to-move row with identical context, so any side-to-move bias in the model cancels out.
 The same thresholds applied to the Lichess win% curve give the eval-only label for comparison.
 
+Labels follow Chess.com's published expected-points bands (Classification V2): best = engine move,
+excellent < 0.02, good < 0.05, inaccuracy < 0.10, mistake < 0.20, blunder >= 0.20, plus book moves.
+
 Usage (repo root):
   python -m ep_model.phase_d.review game.pgn
   python -m ep_model.phase_d.review game.pgn --white-elo 1450 --black-elo 1500 --depth 14 --html out.html
@@ -16,13 +19,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import chess
-import chess.engine
 import chess.pgn
+import chess.polyglot
 
 from ep_model.phase_a.rowgen import (
     classify_time_class,
@@ -34,17 +38,23 @@ from ep_model.phase_a.rowgen import (
     rating_band_from_average,
 )
 from ep_model.phase_b.augment_evals import load_policy
-from ep_model.phase_b.eval_extract import extract_eval_fields
 from ep_model.phase_c.evaluate import lichess_expected
 from ep_model.phase_c.prepare import cp_or_mate_proxy
 from ep_model.phase_d.predictor import EPModel
+from ep_model.phase_d.ratings import detect_pool, to_lichess_scale
 
 LOG = logging.getLogger(__name__)
 
-# Expected-score drop thresholds (0-1 scale). Same cut-offs for EP and the Lichess curve,
-# so label differences come from the model, not the thresholds.
-LABELS = [(0.02, "excellent"), (0.05, "good"), (0.10, "inaccuracy"), (0.15, "mistake")]
+DEFAULT_BOOK = Path(__file__).resolve().parent / "data" / "book.bin"
+BOOK_MAX_PLY = 30
+
+# Expected-score drop thresholds (0-1 scale), Chess.com's bands. Same cut-offs for EP and the
+# Lichess curve, so label differences come from the model, not the thresholds.
+LABELS = [(0.02, "excellent"), (0.05, "good"), (0.10, "inaccuracy"), (0.20, "mistake")]
 WORST_LABEL = "blunder"
+
+# fens, progress(done, total) -> eval fields + best_uci per FEN (see EnginePool.analyse)
+AnalyseFn = Callable[[list[str], Callable[[int, int], None] | None], list[dict[str, Any]]]
 
 
 def label_for_loss(loss: float, is_engine_best: bool) -> str:
@@ -56,6 +66,11 @@ def label_for_loss(loss: float, is_engine_best: bool) -> str:
     return WORST_LABEL
 
 
+def move_accuracy(ep_loss: float) -> float:
+    """Lichess's per-move accuracy curve, applied to expected-points loss (in percentage points)."""
+    return max(0.0, min(100.0, 103.1668 * math.exp(-0.04354 * ep_loss * 100.0) - 3.1669))
+
+
 def _elo(headers: chess.pgn.Headers, key: str, override: int | None) -> int:
     if override is not None:
         return override
@@ -63,7 +78,7 @@ def _elo(headers: chess.pgn.Headers, key: str, override: int | None) -> int:
     try:
         return int(raw)
     except ValueError:
-        raise SystemExit(f"PGN has no usable {key}; pass --{key[:5].lower()}-elo") from None
+        raise ValueError(f"PGN has no usable {key}; pass it explicitly") from None
 
 
 def _terminal_score(board: chess.Board) -> float | None:
@@ -73,6 +88,13 @@ def _terminal_score(board: chess.Board) -> float | None:
     if board.is_game_over(claim_draw=True):
         return 0.5
     return None
+
+
+def _with_white_fields(row: dict[str, Any]) -> dict[str, Any]:
+    sign = 1 if row["side_to_move"] == "w" else -1
+    row["eval_cp_white"] = sign * row["eval_cp_stm"] if row["eval_cp_stm"] is not None else None
+    row["mate_white"] = sign * row["mate_stm"] if row["mate_stm"] is not None else None
+    return row
 
 
 def best_move_row(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
@@ -93,46 +115,56 @@ def best_move_row(before: dict[str, Any], after: dict[str, Any]) -> dict[str, An
             row["eval_cp_stm"], row["mate_stm"] = None, -mate
     else:
         row["eval_cp_stm"], row["mate_stm"] = (-cp if cp is not None else None), None
-    white_to_move = row["side_to_move"] == "w"
-    sign = 1 if white_to_move else -1
-    row["eval_cp_white"] = sign * row["eval_cp_stm"] if row["eval_cp_stm"] is not None else None
-    row["mate_white"] = sign * row["mate_stm"] if row["mate_stm"] is not None else None
-    return row
+    return _with_white_fields(row)
+
+
+def mirrored_row(row: dict[str, Any]) -> dict[str, Any]:
+    """The same position and white-POV eval, scored as if the other side were to move."""
+    m = dict(row)
+    m["side_to_move"] = "b" if row["side_to_move"] == "w" else "w"
+    m["elo_to_move"], m["elo_opponent"] = row["elo_opponent"], row["elo_to_move"]
+    m["elo_diff"] = -row["elo_diff"]
+    m["eval_cp_stm"] = -row["eval_cp_stm"] if row["eval_cp_stm"] is not None else None
+    m["mate_stm"] = -row["mate_stm"] if row["mate_stm"] is not None else None
+    return m
 
 
 def review_game(
     game: chess.pgn.Game,
     model: EPModel,
-    engine: chess.engine.SimpleEngine,
+    analyse: AnalyseFn,
     depth: int,
     white_elo: int | None = None,
     black_elo: int | None = None,
+    rating_pool: str = "auto",
+    book_path: Path | None = DEFAULT_BOOK,
+    progress: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     h = game.headers
-    w_elo = _elo(h, "WhiteElo", white_elo)
-    b_elo = _elo(h, "BlackElo", black_elo)
+    w_elo_raw = _elo(h, "WhiteElo", white_elo)
+    b_elo_raw = _elo(h, "BlackElo", black_elo)
     init, inc = parse_time_control(h.get("TimeControl"))
     time_class = classify_time_class(init)
+    pool = detect_pool(dict(h)) if rating_pool == "auto" else rating_pool
+    w_elo = to_lichess_scale(w_elo_raw, pool, time_class)
+    b_elo = to_lichess_scale(b_elo_raw, pool, time_class)
     band = rating_band_from_average((w_elo + b_elo) / 2.0)
     eco = h.get("ECO") or None
 
     nodes = collect_mainline_moves(game)
     board = game.board()
+    start_fen = board.fen()
     clk_w = parse_clock_header(h.get("WhiteClock"))
     clk_b = parse_clock_header(h.get("BlackClock"))
 
     # One row per position (before each move, plus the final position), Phase A/B field names.
     positions: list[dict[str, Any]] = []
     for i in range(len(nodes) + 1):
-        info = engine.analyse(board, chess.engine.Limit(depth=depth))
         white_to_move = board.turn == chess.WHITE
         elo_to_move, elo_opp = (w_elo, b_elo) if white_to_move else (b_elo, w_elo)
-        pv = info.get("pv") or []
         positions.append(
             {
                 "fen": board.fen(),
-                "best_move_uci": pv[0].uci() if pv else None,
-                "best_move_san": board.san(pv[0]) if pv else None,
                 "terminal": _terminal_score(board),
                 "ply": i + 1,
                 "move_number": board.fullmove_number,
@@ -150,7 +182,6 @@ def review_game(
                 "phase": game_phase_from_half_moves(len(board.move_stack)),
                 "opening_eco": eco,
                 "rating_band": band,
-                **extract_eval_fields(board, info),
             }
         )
         if i == len(nodes):
@@ -163,52 +194,95 @@ def review_game(
                 clk_w = clk_after
             else:
                 clk_b = clk_after
-        LOG.debug("analysed ply %s/%s", i + 1, len(nodes))
+
+    evals = analyse([p["fen"] for p in positions], progress)
+    for pos, ev in zip(positions, evals):
+        pos.update({k: ev[k] for k in ("eval_cp_white", "mate_white", "eval_cp_stm", "mate_stm", "eval_depth")})
+        b = chess.Board(pos["fen"])
+        best = chess.Move.from_uci(ev["best_uci"]) if ev.get("best_uci") else None
+        pos["best_uci"] = best.uci() if best else None
+        pos["best_san"] = b.san(best) if best else None
 
     ep = model.predict_rows(positions)
-    for pos, e in zip(positions, ep):
+    ep_mirror = model.predict_rows([mirrored_row(p) for p in positions])
+    for pos, e, em in zip(positions, ep, ep_mirror):
         cp = cp_or_mate_proxy(pos["eval_cp_stm"], pos["mate_stm"])
-        pos["ep_stm"] = pos["terminal"] if pos["terminal"] is not None else float(e)
-        pos["lichess_stm"] = pos["terminal"] if pos["terminal"] is not None else float(lichess_expected(cp))
         pos["cp_stm"] = cp
+        if pos["terminal"] is not None:
+            pos["ep_stm"] = pos["lichess_stm"] = pos["terminal"]
+            stm_white = pos["side_to_move"] == "w"
+            pos["white_ep_display"] = pos["terminal"] if stm_white else 1.0 - pos["terminal"]
+        else:
+            pos["ep_stm"] = float(e)
+            pos["lichess_stm"] = float(lichess_expected(cp))
+            # Display value (eval bar, graph): average of the side-to-move view and the mirrored view,
+            # so the curve doesn't zig-zag with whoever happens to be on move.
+            white_view = float(e) if pos["side_to_move"] == "w" else 1.0 - float(e)
+            mirror_white_view = 1.0 - float(em) if pos["side_to_move"] == "w" else float(em)
+            pos["white_ep_display"] = 0.5 * (white_view + mirror_white_view)
 
     best_rows = [best_move_row(positions[i], positions[i + 1]) for i in range(len(nodes))]
     best_ep = model.predict_rows(best_rows)
 
+    book = None
+    if book_path is not None and Path(book_path).is_file():
+        book = chess.polyglot.open_reader(str(book_path))
+    in_book = book is not None
+
     moves: list[dict[str, Any]] = []
     board = game.board()
-    for i, node in enumerate(nodes):
-        before, after = positions[i], positions[i + 1]
-        san = board.san(node.move)
-        mover = "white" if board.turn == chess.WHITE else "black"
-        board.push(node.move)
-        is_best = node.move.uci() == before["best_move_uci"]
-        # Mover's point of view: after the move it is the opponent to move, so flip.
-        b = best_rows[i]
-        ep_best = 1.0 - (b["terminal"] if b["terminal"] is not None else float(best_ep[i]))
-        ep_after = 1.0 - after["ep_stm"]
-        li_best, li_after = before["lichess_stm"], 1.0 - after["lichess_stm"]
-        ep_loss = 0.0 if is_best else max(0.0, ep_best - ep_after)
-        li_loss = 0.0 if is_best else max(0.0, li_best - li_after)
-        moves.append(
-            {
-                "ply": i + 1,
-                "move_number": before["move_number"],
-                "mover": mover,
-                "san": san,
-                "best_san": before["best_move_san"],
-                "cp_before": before["cp_stm"],
-                "ep_best": ep_best,
-                "ep_after": ep_after,
-                "ep_loss": ep_loss,
-                "ep_label": label_for_loss(ep_loss, is_best),
-                "lichess_best": li_best,
-                "lichess_after": li_after,
-                "lichess_loss": li_loss,
-                "lichess_label": label_for_loss(li_loss, is_best),
-                "clock_sec": before["clk_white_sec"] if mover == "white" else before["clk_black_sec"],
-            }
-        )
+    try:
+        for i, node in enumerate(nodes):
+            before, after = positions[i], positions[i + 1]
+            mv = node.move
+            san = board.san(mv)
+            mover = "white" if board.turn == chess.WHITE else "black"
+            is_book = False
+            if in_book and i < BOOK_MAX_PLY:
+                is_book = any(e.move == mv for e in book.find_all(board))
+            in_book = in_book and is_book
+            board.push(mv)
+            is_best = mv.uci() == before["best_uci"]
+            # Mover's point of view: after the move it is the opponent to move, so flip.
+            bst = best_rows[i]
+            ep_best = 1.0 - (bst["terminal"] if bst["terminal"] is not None else float(best_ep[i]))
+            ep_after = 1.0 - after["ep_stm"]
+            li_best, li_after = before["lichess_stm"], 1.0 - after["lichess_stm"]
+            ep_loss = 0.0 if (is_best or is_book) else max(0.0, ep_best - ep_after)
+            li_loss = 0.0 if (is_best or is_book) else max(0.0, li_best - li_after)
+            ep_label = "book" if is_book else label_for_loss(ep_loss, is_best)
+            best_mv = chess.Move.from_uci(before["best_uci"]) if before["best_uci"] else None
+            moves.append(
+                {
+                    "ply": i + 1,
+                    "move_number": before["move_number"],
+                    "mover": mover,
+                    "san": san,
+                    "uci": mv.uci(),
+                    "from": chess.square_name(mv.from_square),
+                    "to": chess.square_name(mv.to_square),
+                    "fen_before": before["fen"],
+                    "fen_after": after["fen"],
+                    "best_uci": before["best_uci"],
+                    "best_san": before["best_san"],
+                    "best_from": chess.square_name(best_mv.from_square) if best_mv else None,
+                    "best_to": chess.square_name(best_mv.to_square) if best_mv else None,
+                    "cp_before": before["cp_stm"],
+                    "ep_best": ep_best,
+                    "ep_after": ep_after,
+                    "ep_loss": ep_loss,
+                    "ep_label": ep_label,
+                    "lichess_best": li_best,
+                    "lichess_after": li_after,
+                    "lichess_loss": li_loss,
+                    "lichess_label": "book" if is_book else label_for_loss(li_loss, is_best),
+                    "accuracy": 100.0 if is_book else move_accuracy(ep_loss),
+                    "clock_sec": before["clk_white_sec"] if mover == "white" else before["clk_black_sec"],
+                }
+            )
+    finally:
+        if book is not None:
+            book.close()
 
     summary: dict[str, Any] = {}
     for side in ("white", "black"):
@@ -219,26 +293,50 @@ def review_game(
         summary[side] = {
             "moves": len(mine),
             "avg_ep_loss": sum(m["ep_loss"] for m in mine) / len(mine) if mine else 0.0,
+            "accuracy": sum(m["accuracy"] for m in mine) / len(mine) if mine else 100.0,
             "labels": counts,
         }
 
+    # Key moments: the biggest EP drops that reached at least "mistake".
+    key = sorted(
+        (m for m in moves if m["ep_label"] in ("mistake", "blunder")), key=lambda m: m["ep_loss"], reverse=True
+    )[:5]
+
+    def white_display_cp(p: dict[str, Any]) -> dict[str, Any]:
+        return {"cp": p["eval_cp_white"], "mate": p["mate_white"]}
+
     return {
         "headers": dict(h),
-        "white_elo": w_elo,
-        "black_elo": b_elo,
+        "white_elo": w_elo_raw,
+        "black_elo": b_elo_raw,
+        "white_model_elo": w_elo,
+        "black_model_elo": b_elo,
+        "rating_pool": pool,
         "time_class": time_class,
         "rating_band": band,
         "engine_depth": depth,
-        "white_ep_by_ply": [p["ep_stm"] if p["side_to_move"] == "w" else 1.0 - p["ep_stm"] for p in positions],
+        "start_fen": start_fen,
+        "positions": [
+            {
+                "fen": p["fen"],
+                "white_ep": p["white_ep_display"],
+                "white_lichess": p["lichess_stm"] if p["side_to_move"] == "w" else 1.0 - p["lichess_stm"],
+                **white_display_cp(p),
+            }
+            for p in positions
+        ],
+        "white_ep_by_ply": [p["white_ep_display"] for p in positions],
         "white_lichess_by_ply": [p["lichess_stm"] if p["side_to_move"] == "w" else 1.0 - p["lichess_stm"] for p in positions],
         "moves": moves,
         "summary": summary,
+        "key_moments": sorted(m["ply"] for m in key),
     }
 
 
 def print_review(r: dict[str, Any]) -> None:
     h = r["headers"]
-    print(f"{h.get('White', '?')} ({r['white_elo']}) vs {h.get('Black', '?')} ({r['black_elo']})  "
+    pool_note = f" (model sees {r['white_model_elo']}/{r['black_model_elo']} Lichess)" if r["rating_pool"] != "lichess" else ""
+    print(f"{h.get('White', '?')} ({r['white_elo']}) vs {h.get('Black', '?')} ({r['black_elo']}){pool_note}  "
           f"{h.get('Result', '*')}  {r['time_class']}  depth {r['engine_depth']}")
     print(f"{'move':<14}{'EP best':>10}{'EP after':>10}{'EP loss':>9}  {'EP label':<12}{'eval-only':<12}best")
     for m in r["moves"]:
@@ -249,18 +347,30 @@ def print_review(r: dict[str, Any]) -> None:
             f"{m['ep_label']:<12}{m['lichess_label']:<12}{m['best_san'] or ''}{flag}"
         )
     for side, s in r["summary"].items():
-        print(f"{side}: avg EP loss {s['avg_ep_loss']:.1%} | {s['labels']}")
+        print(f"{side}: accuracy {s['accuracy']:.1f} | avg EP loss {s['avg_ep_loss']:.1%} | {s['labels']}")
     print("* = EP label differs from the eval-only (Lichess curve) label")
 
 
+def read_game(pgn_path: Path, index: int = 0) -> chess.pgn.Game | None:
+    with open(pgn_path, encoding="utf-8") as f:
+        for _ in range(index):
+            if chess.pgn.read_game(f) is None:
+                return None
+        return chess.pgn.read_game(f)
+
+
 def main(argv: list[str] | None = None) -> int:
+    from ep_model.phase_d.engine_pool import EnginePool
+
     p = argparse.ArgumentParser(description="Phase D: EP-based move review for one PGN")
     p.add_argument("pgn", type=Path)
     p.add_argument("--game-index", type=int, default=0, help="Which game in the file (0-based)")
     p.add_argument("--white-elo", type=int, default=None)
     p.add_argument("--black-elo", type=int, default=None)
-    p.add_argument("--policy", type=Path, default=Path(__file__).resolve().parents[1] / "config" / "engine_policy.json")
+    p.add_argument("--rating-pool", choices=["auto", "lichess", "chesscom"], default="auto")
+    p.add_argument("--policy", type=Path, default=Path(__file__).resolve().parents[1] / "config" / "engine_policy_parallel.json")
     p.add_argument("--depth", type=int, default=None, help="Override policy depth (model was trained at policy depth)")
+    p.add_argument("--workers", type=int, default=4, help="Parallel Stockfish processes")
     p.add_argument("--model-dir", type=Path, default=None)
     p.add_argument("--json", type=Path, default=None, help="Write full review JSON here")
     p.add_argument("--html", type=Path, default=None, help="Write an HTML report here")
@@ -268,11 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(message)s")
 
-    with open(args.pgn, encoding="utf-8") as f:
-        for _ in range(args.game_index):
-            if chess.pgn.read_game(f) is None:
-                break
-        game = chess.pgn.read_game(f)
+    game = read_game(args.pgn, args.game_index)
     if game is None:
         LOG.error("No game at index %s in %s", args.game_index, args.pgn)
         return 1
@@ -280,12 +386,21 @@ def main(argv: list[str] | None = None) -> int:
     policy = load_policy(args.policy)
     depth = args.depth or int(policy["depth"])
     model = EPModel(args.model_dir)
-    engine = chess.engine.SimpleEngine.popen_uci(policy.get("stockfish_path", "stockfish"))
-    try:
-        engine.configure({"Threads": int(policy.get("threads", 1)), "Hash": int(policy.get("hash_mb", 64))})
-        result = review_game(game, model, engine, depth, args.white_elo, args.black_elo)
-    finally:
-        engine.quit()
+    with EnginePool(
+        policy.get("stockfish_path", "stockfish"),
+        workers=args.workers,
+        threads=int(policy.get("threads", 1)),
+        hash_mb=int(policy.get("hash_mb", 64)),
+    ) as pool:
+        result = review_game(
+            game,
+            model,
+            lambda fens, prog: pool.analyse(fens, depth, prog),
+            depth,
+            args.white_elo,
+            args.black_elo,
+            args.rating_pool,
+        )
 
     print_review(result)
     if args.json:

@@ -5,7 +5,8 @@ import pandas as pd
 
 from ep_model.phase_c.evaluate import fit_logistic_1d, lichess_expected
 from ep_model.phase_c.prepare import FEATURE_NAMES, add_model_features, apply_clock_dropout
-from ep_model.phase_d.review import best_move_row, label_for_loss
+from ep_model.phase_d.ratings import detect_pool, to_lichess_scale
+from ep_model.phase_d.review import best_move_row, label_for_loss, mirrored_row, move_accuracy
 
 
 def _row(**kw):
@@ -66,7 +67,8 @@ def test_label_thresholds():
     assert label_for_loss(0.03, False) == "good"
     assert label_for_loss(0.07, False) == "inaccuracy"
     assert label_for_loss(0.12, False) == "mistake"
-    assert label_for_loss(0.15, False) == "blunder"
+    assert label_for_loss(0.19, False) == "mistake"
+    assert label_for_loss(0.20, False) == "blunder"
 
 
 def test_best_move_row_flips_eval_to_opponent():
@@ -84,3 +86,23 @@ def test_best_move_row_mates():
     assert r["mate_stm"] == -2 and r["mate_white"] == 2
     assert best_move_row(_row(eval_cp_stm=None, mate_stm=1), after)["terminal"] == 0.0
     assert best_move_row(_row(eval_cp_stm=None, mate_stm=-2), after)["mate_stm"] == 2
+
+
+def test_mirrored_row_keeps_white_eval_and_swaps_sides():
+    r = _row(side_to_move="w", elo_to_move=1500, elo_opponent=1600, elo_diff=-100, eval_cp_stm=80, eval_cp_white=80)
+    m = mirrored_row(r)
+    assert m["side_to_move"] == "b" and m["elo_to_move"] == 1600 and m["elo_diff"] == 100
+    assert m["eval_cp_stm"] == -80 and m["eval_cp_white"] == 80
+
+
+def test_move_accuracy_curve():
+    assert move_accuracy(0.0) > 99.99
+    assert 60 < move_accuracy(0.10) < 65
+    assert move_accuracy(1.0) == 0.0
+
+
+def test_rating_pool():
+    assert detect_pool({"Site": "Chess.com"}) == "chesscom"
+    assert detect_pool({"Site": "https://lichess.org/abc"}) == "lichess"
+    assert to_lichess_scale(1500, "lichess", "blitz") == 1500
+    assert 1650 < to_lichess_scale(1457, "chesscom", "blitz") < 1750
