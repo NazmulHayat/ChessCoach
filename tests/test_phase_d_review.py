@@ -6,7 +6,8 @@ import pandas as pd
 from ep_model.phase_c.evaluate import fit_logistic_1d, lichess_expected
 from ep_model.phase_c.prepare import FEATURE_NAMES, add_model_features, apply_clock_dropout
 from ep_model.phase_d.ratings import detect_pool, to_lichess_scale
-from ep_model.phase_d.review import best_move_row, label_for_loss, mirrored_row, move_accuracy
+from ep_model.phase_d.rating_estimate import move_accuracy
+from ep_model.phase_d.review import best_move_row, label_for_loss, mirrored_row
 
 
 def _row(**kw):

@@ -27,6 +27,17 @@ function GradeCell({ g }: { g: PhaseGrade | null }) {
   )
 }
 
+function GameRating({ est, rating }: { est: Review['summary']['white']['estimated_rating']; rating: number }) {
+  if (!est) return <span className="gr-val">–</span>
+  const diff = est.rating - rating
+  return (
+    <span className="gr-val" title={`Range ${est.low}–${est.high}`}>
+      {est.rating}
+      <span className={`gr-diff ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}`}>{diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '±0'}</span>
+    </span>
+  )
+}
+
 export function Summary({ review, coach, graphValues, onStart, onJump }: Props) {
   const white = review.headers.White || 'White'
   const black = review.headers.Black || 'Black'
@@ -57,10 +68,13 @@ export function Summary({ review, coach, graphValues, onStart, onJump }: Props) 
       </div>
 
       {(review.summary.white.estimated_rating || review.summary.black.estimated_rating) && (
-        <div className="game-rating" title="Estimated from this game's accuracy alone (rating-free engine accuracy, fitted on Lichess games with known ratings). One game is a noisy sample: the range is ±1 standard deviation.">
-          <span className="gr-val">{review.summary.white.estimated_rating?.rating ?? '–'}</span>
+        <div
+          className="game-rating"
+          title="How you played compared with players at your rating: your rating moved up or down by how much better or worse your moves were than theirs typically are. One game is a small sample, so it moves less in fast games."
+        >
+          <GameRating est={review.summary.white.estimated_rating} rating={review.white_elo} />
           <span className="gr-mid">Game rating</span>
-          <span className="gr-val">{review.summary.black.estimated_rating?.rating ?? '–'}</span>
+          <GameRating est={review.summary.black.estimated_rating} rating={review.black_elo} />
         </div>
       )}
 

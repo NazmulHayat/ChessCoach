@@ -39,7 +39,8 @@ def test_phase_grade():
     book = [{"accuracy": 100.0, "ep_label": "book"}] * 3
     assert phase_grade(book)["grade"] == "book"
     g = phase_grade([{"accuracy": 90.0, "ep_label": "excellent"}, {"accuracy": 80.0, "ep_label": "good"}])
-    assert g["accuracy"] == 85.0 and g["grade"] == "excellent" and g["moves"] == 2
+    # Lichess-style: mean of the (weighted) mean 85 and the harmonic mean 84.71.
+    assert g["accuracy"] == pytest.approx((85 + 2 / (1 / 90 + 1 / 80)) / 2) and g["grade"] == "good" and g["moves"] == 2
     assert phase_grade([{"accuracy": 10.0, "ep_label": "blunder"}])["grade"] == "blunder"
 
 
@@ -48,3 +49,16 @@ def test_rating_pool_inverse():
         back = from_lichess_scale(to_lichess_scale(elo, "chesscom", "blitz"), "chesscom", "blitz")
         assert abs(back - elo) <= 10
     assert from_lichess_scale(1500, "lichess", "blitz") == 1500
+
+
+def test_lichess_accuracy_aggregation():
+    from ep_model.phase_d.accuracy import combine, lichess_game_accuracy, move_accuracy_pct
+
+    assert move_accuracy_pct(0) == 100.0 and move_accuracy_pct(-3) == 100.0
+    assert 63 < move_accuracy_pct(10) < 65  # +1 uncertainty bonus on the Lichess curve
+    # One blunder among accurate moves pulls the game score down much more than a plain average would.
+    accs = [100.0] * 19 + [5.0]
+    assert sum(accs) / 20 > 95 and combine(accs, [1.0] * 20) < 80
+    # A quiet, equal game is near 100 for both sides.
+    acc = lichess_game_accuracy([15.0] + [20.0, 10.0] * 15)
+    assert acc["white"] > 98 and acc["black"] > 98

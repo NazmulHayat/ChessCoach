@@ -15,6 +15,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-10-25 | Coach: tactic hints (missed / allowed mate, hanging pieces, missed material) and engine main line; optional Claude explanations behind ANTHROPIC_API_KEY. |
 | 2026-10-25 | Pretrain on 25M harvested rows (2× data): not significantly better than the shipped 12M model, so not shipped. |
 | 2026-10-25 | Phase B continuous queue (measured +2%), Dockerfile (Stockfish 18 compiled in), Fly.io / Render configs, request limits. Label frequencies on 200 real games. |
+| 2026-10-25 | Independent validation (Lichess puzzles, Lichess's own move verdicts, repeatability); fixes: Lichess accuracy formula, Chess.com-style performance rating, deterministic engine jobs. |
 
 ## Key numbers
 
@@ -34,12 +35,16 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | Training run | 12M rows, 734 trees, 252 s on a laptop; 25M rows, 1,353 trees, 978 s, 4.9 GB peak RAM |
 | 25M vs 12M pretraining (both fine-tuned) | 0.5743 vs 0.5746 log loss; paired difference −0.0002, 95% CI −0.0011 to +0.0007: no significant gain, 12M model kept |
 | App latency | full 62-move game at depth 17: 8.1 s with 4 engines and one line per position; 23.8 s after switching to two lines (multipv=2, needed for Great / Brilliant); 0.07 s on a repeat (FEN cache) |
-| Game rating estimate | LightGBM on 397k player-games (200k Lichess-analysed games), held out by game: blitz MAE 292 vs 362 median baseline (−19%), rapid 252 vs 322 (−22%), classical 188 vs 238, bullet 332 vs 376; data extraction + fit in about 3 minutes |
+| Game rating (performance) | your rating + k·(plays-like − rating), fitted on 397k Lichess player-games; held out, blitz: players rated 50+ above their rating in that game scored 63.5% vs 37.9% for 50+ below (48.8% in between) |
+| Puzzle validation | 300 Lichess puzzles: solution move best/great/brilliant 99.3%; the puzzle's blunder flagged 100% when the player wasn't already lost (93.0% overall) |
+| Agreement with Lichess's verdicts | 100 games, 6,016 moves: 94.6% of our blunders are also Lichess errors; 1.1% false alarms on moves Lichess leaves unmarked |
+| Accuracy formula | matches Lichess's displayed accuracy within 0.32 points on average (94% within rounding), 762 player scores |
+| Repeatability | same label on re-review 78.2% → 100% (engine cleared before each position), +5% review time (22.3 → 23.6 s per game) |
 | Special label frequencies | 200 random Lichess games, 13,971 moves, depth 17: Great 2.8%, Miss 1.7%, Brilliant 0.31%; stable across rating bands (Great 2.6–2.9%, Brilliant 0.25–0.53%) |
 | Phase B dispatch | continuous queue vs 256-row chunks: 8.91 → 9.09 positions/s (+2%, within run-to-run noise), 768 positions, 8 engines |
 | Docker image | 1.16 GB (Python 3.12 slim + Stockfish 18 built from source + model); full 13-move review in 11.6 s with 2 engines |
 | multipv=2 cost | 0.414 → 0.605 s/position at depth 17 (+46%); top-line eval drift median 7.5 cp, p90 27 cp (120 positions) |
-| Tests | 49 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
+| Tests | 52 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
 
 ## Problems solved
 
@@ -57,6 +62,9 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 12. **Drag-and-drop died after the first wrong retry.** Two react-chessboard quirks: dragging is wired up only when the board mounts (toggling `arePiecesDraggable` later leaves pieces undraggable), and its drop handler can be a closure from an earlier render. Fixed by keeping the board draggable for the whole retry session (remount per session) and reading the current move handler through a ref. Found with a scripted Playwright test that drags pieces.
 13. **One game's accuracy barely predicts rating.** Least squares on accuracy and error rates: blunder-rate-style features gave blitz MAE 341 vs 364 for guessing the median (r = 0.34). Adding accuracy in balanced positions and mean |eval| (separating "accurate because the game was easy" from "accurate in a fight") with a small LightGBM: MAE 292 (r = 0.59). Opponent rating left out on purpose, since matchmaking would leak it.
 14. **More pretraining data stopped helping.** Doubling the harvested pretraining set (12M → 25M rows, 1,353 trees, 978 s, 4.9 GB peak) gave 0.5743 vs 0.5746 on the clean test set after the same fine-tune, a −0.0002 difference with a 95% CI of −0.0011 to +0.0007. Not significant, so the smaller model stays (12.8 MB vs 22.5 MB). The limit is now the clean data and the features, not pretraining volume. Decided by the pre-registered rule: ship only on a significant paired-bootstrap gain.
+15. **Accuracy was inflated.** A plain average of per-move accuracy showed 99.7 for a game with mistakes. Switched to Lichess's published method (volatility-weighted mean + harmonic mean) and checked it against the accuracy Lichess shows on 381 real games from its API: within 0.32 points on average. Matching it exposed an undocumented detail: Lichess floors each move at 1 in the harmonic mean (with ~0, one game was off by 15 points).
+16. **"Game rating" regressed everyone to the average.** The first model minimised error against the player's rating, which is the least-wrong guess but useless as "you played like X" (a 99.7-accuracy game by a ~1900 player came out ~1500). Inverting it ("which rating plays like this?") swung far too wide (blitz MAE 430 vs 362 for guessing the median). Final version follows Chess.com's description: start from your rating and move it by how much better or worse you played than players at your rating, scaled by how much one game can tell (Elo's 200-point single-game spread). Validated by outcome: 63.5% vs 37.9% mean score for players rated above vs below their rating in that game.
+17. **Same game, different labels.** A re-review kept the same label on only 78.2% of moves: each Stockfish process carried hash and history from earlier positions, so results depended on thread scheduling. Clearing the engine before every position made it 100%, at about 5% more time (22.3 → 23.6 s per game, 4 engines). A first measurement suggested 2× slower; it had run alongside other jobs, and a clean A/B on the same 8 games showed the real cost.
 
 ## Product
 

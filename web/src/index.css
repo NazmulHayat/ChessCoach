@@ -256,10 +256,13 @@ button { font: inherit; color: inherit; }
 .lt-count { width: 64px; text-align: center; font-weight: 900; font-variant-numeric: tabular-nums; }
 .lt-name > span { display: flex; align-items: center; gap: 9px; font-weight: 700; color: var(--text-2); }
 .game-rating {
-  display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; padding: 6px 16px 12px;
+  display: grid; grid-template-columns: 72px 1fr 72px; align-items: center; padding: 6px 16px 12px;
   border-bottom: 1px solid var(--line); margin-bottom: 6px; cursor: help;
 }
-.gr-val { text-align: center; font-weight: 900; font-size: 17px; font-variant-numeric: tabular-nums; }
+.gr-val { display: flex; flex-direction: column; align-items: center; font-weight: 900; font-size: 17px; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.gr-diff { font-size: 12px; font-weight: 800; color: var(--muted); }
+.gr-diff.up { color: var(--win); }
+.gr-diff.down { color: var(--loss); }
 .gr-mid { color: var(--text-2); font-weight: 700; font-size: 14px; text-align: center; }
 .phase-table { margin-top: 6px; border-top: 1px solid var(--line); }
 .phase-table td { padding-top: 7px; padding-bottom: 7px; }

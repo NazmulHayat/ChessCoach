@@ -41,7 +41,8 @@ from ep_model.phase_b.augment_evals import load_policy
 from ep_model.phase_c.evaluate import lichess_expected
 from ep_model.phase_c.prepare import cp_or_mate_proxy
 from ep_model.phase_d.predictor import EPModel
-from ep_model.phase_d.rating_estimate import estimate_rating, move_accuracy, phase_grade, phase_of
+from ep_model.phase_d.accuracy import combine, ep_move_weights, move_accuracy_pct
+from ep_model.phase_d.rating_estimate import estimate_rating, phase_grade, phase_of
 from ep_model.phase_d.ratings import detect_pool, from_lichess_scale, to_lichess_scale
 from ep_model.phase_d.special import is_brilliant, is_great, is_miss, sacrifice_points, sacrificed_piece, thresholds_for
 from ep_model.phase_d.tactics import tactic_hint
@@ -352,7 +353,7 @@ def review_game(
                     "lichess_after": li_after,
                     "lichess_loss": li_loss,
                     "lichess_label": "book" if is_book else label_for_loss(li_loss, is_best),
-                    "accuracy": 100.0 if is_book else move_accuracy(ep_loss),
+                    "accuracy": 100.0 if is_book else move_accuracy_pct(100.0 * ep_loss),
                     "phase": phase,
                     "clock_sec": before["clk_white_sec"] if mover == "white" else before["clk_black_sec"],
                 }
@@ -360,6 +361,11 @@ def review_game(
     finally:
         if book is not None:
             book.close()
+
+    # Lichess's aggregation (volatility-weighted mean + harmonic mean), on our expected-points losses.
+    weights = ep_move_weights([p["white_ep_display"] for p in positions])
+    for m, w in zip(moves, weights):
+        m["weight"] = w
 
     summary: dict[str, Any] = {}
     for side in ("white", "black"):
@@ -373,13 +379,14 @@ def review_game(
             [max(0.0, m["lichess_best"] - m["lichess_after"]) for m in later],
             [abs(m["cp_before"]) for m in later],
             time_class,
+            w_elo if side == "white" else b_elo,
         )
         if est is not None and pool != "lichess":
             est = {k: from_lichess_scale(v, pool, time_class) for k, v in est.items()}
         summary[side] = {
             "moves": len(mine),
             "avg_ep_loss": sum(m["ep_loss"] for m in mine) / len(mine) if mine else 0.0,
-            "accuracy": sum(m["accuracy"] for m in mine) / len(mine) if mine else 100.0,
+            "accuracy": combine([m["accuracy"] for m in mine], [m["weight"] for m in mine]) if mine else 100.0,
             "labels": counts,
             "estimated_rating": est,
             "phases": {ph: phase_grade([m for m in mine if m["phase"] == ph]) for ph in ("opening", "middlegame", "endgame")},

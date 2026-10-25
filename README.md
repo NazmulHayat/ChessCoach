@@ -26,6 +26,13 @@ Held-out test: **31,961 positions from 6,403 games** that no model saw, labelled
 - **Pretrain + fine-tune is significantly better** than training on the clean data alone: −0.0043 log loss, 95% CI −0.0065 to −0.0021 (paired bootstrap over games).
 - **Calibrated**: in every 10-point bin, the actual score is within 1.5 points of the prediction.
 
+**Are the labels right?** Checked against references we didn't produce ([details](docs/methodology.md#validation-against-independent-references)):
+
+- **Lichess puzzles** (300): the winning move is labelled best / great / brilliant 99.3% of the time; the blunder that starts the puzzle is flagged 100% of the time when the player wasn't already lost.
+- **Lichess's own verdicts** (100 analysed games, 6,016 moves): 94.6% of our blunders are also errors in Lichess's deeper analysis; only 1.1% of moves Lichess leaves unmarked get a mistake or blunder from us.
+- **Accuracy** follows Lichess's published formula and matches the accuracy Lichess shows to within 0.32 points on average (762 player scores).
+- **Repeatable**: reviewing a game twice gives identical labels (was 78% before clearing the engine between jobs).
+
 Where the 12M positions came from: about 1 in 9 games in the Lichess dump was already analysed by Lichess's servers and carries an engine eval on every move. Harvesting those gave **46.1M labelled positions from 84.6M games in 15 minutes**, with no Stockfish time. Details in [`docs/methodology.md`](docs/methodology.md).
 
 ## The Game Review app
@@ -36,7 +43,7 @@ Where the 12M positions came from: about 1 in 9 games in the Lichess dump was al
 
 - **Import** from a Chess.com or Lichess username (recent games, no login), or paste a PGN.
 - **Live analysis**: Stockfish runs on a pool of parallel engines with the top two lines per position (a 62-move game at depth 17 in about 24 s with 4 engines; re-opening a game is instant from the cache); progress streams to the page.
-- **Summary**: accuracy for both players, an estimated **game rating** (what rating you played like, fitted on 397k Lichess player-games: blitz error 292 points vs 362 for a blind guess), label counts, **opening / middlegame / endgame grades**, key moments, advantage graph.
+- **Summary**: accuracy for both players (Lichess's method), a **game rating** (your rating moved up or down by how much better or worse you played than players at your level, as Chess.com describes it), label counts, **opening / middlegame / endgame grades**, key moments, advantage graph.
 - **Review**: board with move badges, last-move highlight, best-move arrows, move animation, captured pieces and material lead in the player bars; eval bar that switches between **Chances** (EP) and raw **Engine** score; a coach that explains each move and points out where an eval-only review would disagree; clickable graph; move list; flip button; keyboard (← → Home End, Space to play, F to flip).
 - **Settings**: four board themes and move sounds (synthesised with Web Audio, no audio files), saved per browser. Works on phones (single-column layout, tap-to-move in retry mode).
 - **Labels** use Chess.com's published expected-points bands: best (engine move), excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%, plus book moves from a polyglot opening book.

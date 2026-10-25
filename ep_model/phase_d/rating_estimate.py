@@ -1,9 +1,9 @@
 """
 Game rating estimate and opening / middlegame / endgame grades.
 
-Rating estimate: a small LightGBM regressor (scripts/fit_rating_estimate.py) from rating-free accuracy
-features of one player's moves in one game to their Lichess rating, fitted on games Lichess already
-analysed. The features use the Lichess win% curve on raw engine evals (not the EP model, which takes the
+Rating estimate ("you played like a 1650"): a small LightGBM model (scripts/fit_rating_estimate.py) turns
+rating-free accuracy features of one player's moves in one game into a quality score, and the shown rating
+is the one whose typical (median) score matches it. Fitted on games Lichess already analysed. The features use the Lichess win% curve on raw engine evals (not the EP model, which takes the
 rating as an input, and not zeroing the engine's own move, which the fitting data can't know).
 
 Phases (Lichess-style material rules): endgame once at most 6 queens / rooks / bishops / knights are left
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import chess
+import numpy as np
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 MODEL_FILE = DATA_DIR / "rating_lgbm.txt"
@@ -91,16 +92,29 @@ def _model() -> tuple[Any, dict[str, Any]] | None:
     return lgb.Booster(model_file=str(MODEL_FILE)), json.loads(META_FILE.read_text(encoding="utf-8"))
 
 
-def estimate_rating(losses: list[float], abs_cp_before: list[float], time_class: str) -> dict[str, int] | None:
-    """{"rating", "low", "high"} (±1 residual SD, Lichess scale), or None without a model / too few moves."""
+def estimate_rating(
+    losses: list[float], abs_cp_before: list[float], time_class: str, player_rating: float
+) -> dict[str, int] | None:
+    """
+    Game (performance) rating on the Lichess scale: your rating moved by how much better or worse you played
+    than players at your rating typically do. {"rating", "low", "high", "plays_like"}; None without a model
+    or with too few moves.
+    """
     loaded = _model()
     if loaded is None or len(losses) < MIN_MOVES:
         return None
     booster, meta = loaded
-    r = float(booster.predict([features(losses, abs_cp_before, time_class)])[0])
-    r = max(400.0, min(3000.0, r))
-    sd = meta["residual_sd"].get(time_class) or meta["residual_sd"]["blitz"]
-    return {"rating": int(round(r, -1)), "low": int(round(r - sd, -1)), "high": int(round(r + sd, -1))}
+    score = float(booster.predict([features(losses, abs_cp_before, time_class)])[0])
+    table = meta["inverse"].get(time_class) or meta["inverse"]["blitz"]
+    plays_like = float(np.interp(score, table["score"], table["rating"]))
+    r = player_rating + table["k"] * (plays_like - player_rating)
+    sd = meta["posterior_sd"].get(time_class) or meta["posterior_sd"]["blitz"]
+    return {
+        "rating": int(round(r, -1)),
+        "low": int(round(r - sd, -1)),
+        "high": int(round(r + sd, -1)),
+        "plays_like": int(round(plays_like, -1)),
+    }
 
 
 def phase_of(board: chess.Board, ply: int, in_book: bool) -> str:
@@ -119,7 +133,9 @@ def phase_grade(moves: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Accuracy and grade label for one player's moves in one phase; None if they made no moves there."""
     if not moves:
         return None
-    acc = sum(m["accuracy"] for m in moves) / len(moves)
+    from ep_model.phase_d.accuracy import combine
+
+    acc = combine([m["accuracy"] for m in moves], [m.get("weight", 1.0) for m in moves])
     if all(m["ep_label"] == "book" for m in moves):
         grade = "book"
     else:

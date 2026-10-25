@@ -7,8 +7,18 @@ win% curve, not the EP model, which takes the player's rating as input); see rat
 accuracy, blunder / mistake / inaccuracy / precise-move rates, number of moves, mean |eval|, accuracy in
 balanced positions and their share, time class. The opponent's rating is deliberately not a feature.
 
-Model: LightGBM (L1 objective). A first version, least squares on accuracy and error rates per time class,
-reached blitz MAE 341 vs 364 for the median baseline; the balanced-position features matter.
+Game rating = performance relative to your own rating, as Chess.com describes it: compare the quality of
+your moves with what players at your rating typically produce, and move your rating up or down by that.
+  1. LightGBM (L1) turns the features into a quality score s.
+  2. "Plays like" X: the rating whose median score equals s (inverse of the median-score-by-rating curve).
+  3. Game rating = R + k (X - R), R = your rating. One game is noisy evidence, so k is the share of the
+     spread of X - R that real performance swings explain, using Elo's classic assumption that a player's
+     single-game performance varies with an SD of 200 points: k = 200^2 / Var(X - R), per time class.
+Two versions were tried and rejected: predicting the rating directly regresses every game to the average
+(a 99.7-accuracy game by a ~2000 player came out ~1500), and showing X itself spreads far too wide (blitz
+MAE 430 vs 362 for always guessing the median).
+A first version, least squares on accuracy and error rates per time class, reached blitz MAE 341 vs 364
+for the median baseline; the balanced-position features matter.
 Reports MAE on held-out games (both players of a game in the same split) against predicting the time
 class's median rating.
 
@@ -31,13 +41,16 @@ import numpy as np
 import zstandard
 
 from ep_model.harvest.lichess_evals import EVAL_RE, GAME_SEP, HEADER_RE, MOVE_RE, parse_eval
-from ep_model.phase_a.rowgen import classify_time_class, parse_time_control
+from ep_model.phase_a.rowgen import classify_time_class, parse_result_header, parse_time_control
 from ep_model.phase_d.rating_estimate import FEATURE_NAMES, META_FILE, MIN_MOVES, MODEL_FILE, TIME_CLASSES, features, win_prob
 
 LOG = logging.getLogger(__name__)
 REPO = Path(__file__).resolve().parents[2]
+ELO_GAME_SD = 200.0  # Elo's per-game performance spread
 PARAMS = {"objective": "l1", "learning_rate": 0.05, "num_leaves": 31, "min_data_in_leaf": 200, "verbose": -1}
 ROUNDS = 400
+BIN = 100  # rating bin width for the inverse mapping
+MIN_BIN_N = 200
 
 
 def _cp(ev: tuple[int | None, int | None]) -> float:
@@ -85,7 +98,9 @@ def sides_from_game(text: str) -> list[dict]:
     out = []
     for side, ls in losses.items():
         if len(ls) >= MIN_MOVES:
-            out.append({"time_class": tc, "elo": elos[side], "x": features(ls, cps[side], tc)})
+            res_white, _ = parse_result_header(h.get("Result"))
+            score = None if res_white is None else (res_white if side == "w" else 1.0 - res_white)
+            out.append({"time_class": tc, "elo": elos[side], "score": score, "x": features(ls, cps[side], tc)})
     return out
 
 
@@ -119,31 +134,79 @@ def stream_sides(path: Path, max_games: int) -> list[dict]:
     return rows
 
 
-def fit(rows: list[dict], seed: int = 0) -> tuple[lgb.Booster, dict]:
+def inverse_table(score: np.ndarray, rating: np.ndarray) -> dict[str, list[float]]:
+    """Median score per rating bin, made increasing, for score -> rating interpolation."""
+    lo, hi = int(np.floor(rating.min() / BIN) * BIN), int(np.ceil(rating.max() / BIN) * BIN)
+    centers, medians = [], []
+    for b in range(lo, hi, BIN):
+        sel = (rating >= b) & (rating < b + BIN)
+        if sel.sum() >= MIN_BIN_N:
+            centers.append(b + BIN / 2)
+            medians.append(float(np.median(score[sel])))
+    med = np.maximum.accumulate(np.array(medians))
+    med = med + np.arange(len(med)) * 1e-6  # strictly increasing for np.interp
+    return {"score": [round(float(v), 4) for v in med], "rating": centers}
+
+
+def apply_inverse(score: np.ndarray, table: dict[str, list[float]]) -> np.ndarray:
+    return np.interp(score, table["score"], table["rating"])
+
+
+def fit(rows: list[dict], seed: int = 0) -> tuple[lgb.Booster, dict, dict]:
     X = np.array([r["x"] for r in rows])
     y = np.array([r["elo"] for r in rows], dtype=float)
     games = np.array([r["game"] for r in rows])
     test = np.random.RandomState(seed).rand(games.max() + 1)[games] < 0.2
     cat = [FEATURE_NAMES.index("time_class")]
     booster = lgb.train(PARAMS, lgb.Dataset(X[~test], y[~test], feature_name=FEATURE_NAMES, categorical_feature=cat), ROUNDS)
-    pred = booster.predict(X[test])
+    score_tr, score_te = booster.predict(X[~test]), booster.predict(X[test])
     report: dict[str, dict] = {}
+    tables: dict[str, dict] = {}
     for tc, code in TIME_CLASSES.items():
         tr, te = X[~test][:, cat[0]] == code, X[test][:, cat[0]] == code
         if te.sum() < 500:
             continue
+        tables[tc] = inverse_table(score_tr[tr], y[~test][tr])
+        x_tr = apply_inverse(score_tr[tr], tables[tc])
+        k = float(np.clip(ELO_GAME_SD**2 / np.var(x_tr - y[~test][tr]), 0.05, 1.0))
+        tables[tc]["k"] = round(k, 4)
+        truth = y[test][te]
+        x_te = apply_inverse(score_te[te], tables[tc])
+        est = truth + k * (x_te - truth)
+        # Validity: players whose game rating is above their rating should score better in that game.
+        res = np.array([r["score"] if r["score"] is not None else np.nan for r, t in zip(rows, test) if t])[te]
+        gap = est - truth
+        by_gap = {}
+        for name, lo, hi in (("below -50", -1e9, -50), ("-50 to +50", -50, 50), ("above +50", 50, 1e9)):
+            sel = (gap >= lo) & (gap < hi) & ~np.isnan(res)
+            if sel.sum() >= 100:
+                by_gap[name] = {"n": int(sel.sum()), "mean_score": round(float(np.mean(res[sel])), 3)}
         base = np.median(y[~test][tr])
-        err = pred[te] - y[test][te]
+        # Does a typical player at rating R get an estimate near R? Median estimate per 200-point band.
+        bands = {}
+        for b in range(800, 2600, 200):
+            sel = (truth >= b) & (truth < b + 200)
+            if sel.sum() >= 100:
+                bands[f"{b}-{b + 200}"] = {"n": int(sel.sum()), "median_estimate": int(np.median(est[sel]))}
         report[tc] = {
             "n_train": int(tr.sum()),
             "n_test": int(te.sum()),
-            "mae": round(float(np.mean(np.abs(err))), 1),
-            "mae_median_baseline": round(float(np.mean(np.abs(base - y[test][te]))), 1),
-            "corr": round(float(np.corrcoef(pred[te], y[test][te])[0, 1]), 3),
-            "resid_sd": round(float(np.std(err)), 1),
+            "k": round(k, 3),
+            "mean_score_by_game_rating_gap": by_gap,
+            "plays_like_mae": round(float(np.mean(np.abs(x_te - truth))), 1),
+            "mae": round(float(np.mean(np.abs(est - truth))), 1),
+            "mae_regression": round(float(np.mean(np.abs(score_te[te] - truth))), 1),
+            "mae_median_baseline": round(float(np.mean(np.abs(base - truth))), 1),
+            "corr": round(float(np.corrcoef(est, truth)[0, 1]), 3),
+            "estimate_sd": round(float(np.std(est)), 1),
+            "true_sd": round(float(np.std(truth)), 1),
+            "regression_sd": round(float(np.std(score_te[te])), 1),
+            "resid_sd": round(float(np.std(est - truth)), 1),
+            "posterior_sd": round(ELO_GAME_SD * (1 - k) ** 0.5, 1),
+            "median_estimate_by_true_rating": bands,
         }
-        LOG.info("%s: MAE %.0f vs %.0f baseline, r=%.3f", tc, report[tc]["mae"], report[tc]["mae_median_baseline"], report[tc]["corr"])
-    return booster, report
+        LOG.info("%s: k=%.3f, plays-like MAE %.0f, mean score by game-rating gap %s", tc, k, report[tc]["plays_like_mae"], by_gap)
+    return booster, report, tables
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -154,11 +217,12 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     t0 = time.time()
     rows = stream_sides(args.dump, args.games)
-    booster, report = fit(rows)
+    booster, report, tables = fit(rows)
     booster.save_model(str(MODEL_FILE))
     meta = {
         "features": FEATURE_NAMES,
-        "residual_sd": {tc: r["resid_sd"] for tc, r in report.items()},
+        "inverse": tables,
+        "posterior_sd": {tc: r["posterior_sd"] for tc, r in report.items()},
         "report": report,
         "games": args.games,
         "player_games": len(rows),
