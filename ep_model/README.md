@@ -147,6 +147,8 @@ python -m ep_model.phase_d.review game.pgn --html review.html
 python -m ep_model.phase_d.review game.pgn --white-elo 1450 --black-elo 1500 --depth 14
 ```
 
-Per move: **EP if best** (mover's expected score had they played Stockfish's best move), **EP after** the move played, **EP loss**, and a label (excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 15%, blunder ≥ 15%). Both EPs are scored on an opponent-to-move row with the same context, so side-to-move bias in the model cancels. The same thresholds on the Lichess curve give an eval-only label for comparison. Training used `engine_policy.json` depth; lower `--depth` is faster but slightly off-distribution.
+Per move: **EP if best** (mover's expected score had they played Stockfish's best move), **EP after** the move played, **EP loss**, and a label using Chess.com's published bands (best = engine move, excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%; book moves from `phase_d/data/book.bin`). Both EPs are scored on an opponent-to-move row with the same context, so side-to-move bias in the model cancels. The same thresholds on the Lichess curve give an eval-only label for comparison. Training used depth 17; lower `--depth` is faster but slightly off-distribution. Chess.com ratings are mapped to the Lichess scale (`phase_d/ratings.py`, approximate; `--rating-pool` overrides detection). `--workers N` runs N engines in parallel.
+
+Web app on top of this: `python -m ep_model.phase_d.server` (see the root README).
 
 In code: `EPModel().predict_rows(rows)` takes Phase B-shaped dicts and returns the side to move's expected score.
