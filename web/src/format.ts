@@ -23,17 +23,10 @@ export function timeClassLabel(tc: string): string {
 
 export function shortDate(iso: string): string {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 export function initials(name: string): string {
   const clean = name.replace(/[^A-Za-z0-9]/g, '')
   return (clean.slice(0, 2) || '?').toUpperCase()
-}
-
-/** "Today", "Yesterday", or "Oct 25". */
-export function relativeDay(iso: string): string {
-  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const diff = Math.round((day(new Date()) - day(new Date(iso))) / 86_400_000)
-  return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : shortDate(iso)
 }
