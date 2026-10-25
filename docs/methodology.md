@@ -82,6 +82,25 @@ Priority: book > brilliant > great > miss > the EP band label. The band label is
 
 On a mistake, miss or blunder, the board takes a move for the side that erred (drag, or tap a piece then a square; chess.js checks legality). The engine's best move is accepted instantly. Any other move is scored on the server like a played move (same context row as the real move, eval of the position after the attempt) and counts as correct if it loses ≤ 2% EP against the best move. After two wrong tries the best line is shown. Reviews are kept in a 200-entry in-memory LRU for this; if the server has restarted, the app falls back to accepting the engine's top move (or the second-best if it is within 2%).
 
+### Game rating estimate
+
+"What rating did you play like in this game?" A LightGBM regressor (`ep_model/scripts/fit_rating_estimate.py`, `ep_model/phase_d/rating_estimate.py`) maps one player's moves in one game to their rating. It is fitted on games from the dump that Lichess's servers had already analysed (an eval after every move, known ratings): 200,000 games, 397k player-games with ≥ 10 moves, 20% of games held out.
+
+The features are **rating-free** on purpose: the raw win% drop per move on the Lichess curve (not the EP model, which takes the rating as an input, and not zeroed on the engine's own move, which the fitting data can't know). Per player: mean accuracy, blunder / mistake / inaccuracy / precise-move (< 1%) rates, number of moves, mean |eval|, accuracy in roughly balanced positions (|eval| < 3 pawns) and the share of such moves, time class. The opponent's rating is deliberately left out: matchmaking would make it the best predictor without saying anything about how you played.
+
+| Time class | MAE | Always guess the median | Correlation |
+|---|---|---|---|
+| Bullet | 332 | 376 | 0.47 |
+| Blitz | 292 | 362 | 0.59 |
+| Rapid | 252 | 322 | 0.61 |
+| Classical | 188 | 238 | 0.61 |
+
+A first version (least squares on accuracy and error rates) only reached blitz MAE 341 vs 364; the balanced-position features did most of the work. One game is still a noisy sample, so the app shows the estimate with ±1 residual SD in the tooltip. For Chess.com games the estimate is mapped back to the Chess.com scale.
+
+### Phase grades
+
+Phases follow Lichess-style material rules: **endgame** once at most 6 queens / rooks / bishops / knights remain; **opening** for the first 10 moves or while still in book; **middlegame** otherwise. Each player's mean move accuracy in a phase becomes a grade shown with the label icons: ≥ 95 best, ≥ 85 excellent, ≥ 75 good, ≥ 60 inaccuracy, ≥ 45 mistake, else blunder (book if every move was book).
+
 **Accuracy** per move uses Lichess's published accuracy curve applied to EP loss in percentage points; a player's accuracy is the mean over their moves. Chess.com's CAPS formula is not public, so numbers are not directly comparable to theirs.
 
 **Eval bar and graph** show white's EP averaged over the actual side-to-move view and a mirrored view of the same position, so the curve doesn't zig-zag with whoever is on move.

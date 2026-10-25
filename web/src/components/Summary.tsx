@@ -1,7 +1,7 @@
 import type { CoachText } from '../coach'
 import { initials, pct } from '../format'
 import { GRAPH_LABELS, LABEL_ORDER, LABELS } from '../labels'
-import type { Review } from '../types'
+import type { Phase, PhaseGrade, Review } from '../types'
 import { Coach } from './Coach'
 import { Graph } from './Graph'
 import { LabelIcon } from './LabelIcon'
@@ -12,6 +12,19 @@ interface Props {
   graphValues: number[]
   onStart: () => void
   onJump: (ply: number) => void
+}
+
+const PHASES: [Phase, string][] = [['opening', 'Opening'], ['middlegame', 'Middlegame'], ['endgame', 'Endgame']]
+
+function GradeCell({ g }: { g: PhaseGrade | null }) {
+  if (!g) return <td className="lt-count muted">–</td>
+  return (
+    <td className="lt-count" title={`${g.accuracy.toFixed(1)} accuracy over ${g.moves} moves`}>
+      <span className="grade-cell">
+        <LabelIcon label={g.grade} size={22} />
+      </span>
+    </td>
+  )
 }
 
 export function Summary({ review, coach, graphValues, onStart, onJump }: Props) {
@@ -43,6 +56,14 @@ export function Summary({ review, coach, graphValues, onStart, onJump }: Props) 
         </div>
       </div>
 
+      {(review.summary.white.estimated_rating || review.summary.black.estimated_rating) && (
+        <div className="game-rating" title="Estimated from this game's accuracy alone (rating-free engine accuracy, fitted on Lichess games with known ratings). One game is a noisy sample: the range is ±1 standard deviation.">
+          <span className="gr-val">{review.summary.white.estimated_rating?.rating ?? '–'}</span>
+          <span className="gr-mid">Game rating</span>
+          <span className="gr-val">{review.summary.black.estimated_rating?.rating ?? '–'}</span>
+        </div>
+      )}
+
       <table className="label-table">
         <tbody>
           {LABEL_ORDER.map((l) => (
@@ -59,6 +80,18 @@ export function Summary({ review, coach, graphValues, onStart, onJump }: Props) 
               <td className="lt-count" style={{ color: LABELS[l].color }}>
                 {review.summary.black.labels[l] ?? 0}
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <table className="label-table phase-table">
+        <tbody>
+          {PHASES.map(([ph, name]) => (
+            <tr key={ph}>
+              <GradeCell g={review.summary.white.phases?.[ph] ?? null} />
+              <td className="lt-name"><span>{name}</span></td>
+              <GradeCell g={review.summary.black.phases?.[ph] ?? null} />
             </tr>
           ))}
         </tbody>

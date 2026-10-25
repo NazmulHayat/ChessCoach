@@ -10,6 +10,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-03 | Pivot to an expected-points (EP) model. Phase A (sample positions from a 26 GB Lichess dump), Phase B (Stockfish depth 17, FEN cache, resumable checkpoints, `safe_run` with disk/swap/heat guards), Phase C (LightGBM). Pilot on 3k rows. |
 | 2026-10-25 | Baseline evaluation, training fixes, Phase D review, parallel engines, web app, eval harvesting, pretrain + fine-tune (below). |
 
+| 2026-10-25 | Game rating estimate, opening / middlegame / endgame grades. |
 | 2026-10-25 | Great / Miss / Brilliant labels (multipv=2, SEE-based sacrifice check), Retry mode with server-side scoring of tried moves. |
 
 ## Key numbers
@@ -29,6 +30,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | Calibration | every 10-point bin within 1.5 points |
 | Training run | 12M rows, 734 trees, 252 s on a laptop |
 | App latency | full 62-move game reviewed at depth 17 in 8.1 s (4 engines) |
+| Game rating estimate | LightGBM on 397k player-games (200k Lichess-analysed games), held out by game: blitz MAE 292 vs 362 median baseline (−19%), rapid 252 vs 322 (−22%), classical 188 vs 238, bullet 332 vs 376; data extraction + fit in about 3 minutes |
 | multipv=2 cost | 0.414 → 0.605 s/position at depth 17 (+46%); top-line eval drift median 7.5 cp, p90 27 cp (120 positions) |
 | Tests | 37 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, harvest parsing) |
 
@@ -45,6 +47,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 10. **Proving the gain is real.** Added a paired bootstrap over whole games (positions in a game are correlated) so every model comparison reports a 95% CI, not just a point estimate.
 8. **Rating pools differ.** The model learned Lichess ratings; Chess.com ratings are mapped onto that scale per time class.
 11. **"Sacrifice" needs a counterfactual too.** A naive "piece left en prise" check calls every trapped piece a sacrifice. The SEE-based check compares the move against the safest legal alternative and only counts material the player chose to give up.
+13. **One game's accuracy barely predicts rating.** Least squares on accuracy and error rates: blunder-rate-style features gave blitz MAE 341 vs 364 for guessing the median (r = 0.34). Adding accuracy in balanced positions and mean |eval| (separating "accurate because the game was easy" from "accurate in a fight") with a small LightGBM: MAE 292 (r = 0.59). Opponent rating left out on purpose, since matchmaking would leak it.
 12. **Drag-and-drop died after the first wrong retry.** Two react-chessboard quirks: dragging is wired up only when the board mounts (toggling `arePiecesDraggable` later leaves pieces undraggable), and its drop handler can be a closure from an earlier render. Fixed by keeping the board draggable for the whole retry session (remount per session) and reading the current move handler through a ref. Found with a scripted Playwright test that drags pieces.
 
 ## Product

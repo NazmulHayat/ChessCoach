@@ -43,7 +43,16 @@ export interface ReviewMove {
   lichess_loss: number
   lichess_label: Label
   accuracy: number
+  phase: Phase
   clock_sec: number | null
+}
+
+export type Phase = 'opening' | 'middlegame' | 'endgame'
+
+export interface PhaseGrade {
+  accuracy: number
+  grade: Label
+  moves: number
 }
 
 export interface ReviewPosition {
@@ -59,6 +68,8 @@ export interface SideSummary {
   avg_ep_loss: number
   accuracy: number
   labels: Partial<Record<Label, number>>
+  estimated_rating: { rating: number; low: number; high: number } | null
+  phases: Record<Phase, PhaseGrade | null>
 }
 
 export interface Review {

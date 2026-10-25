@@ -243,6 +243,16 @@ button { font: inherit; color: inherit; }
 .label-table td { padding: 5px 16px; }
 .lt-count { width: 64px; text-align: center; font-weight: 900; font-variant-numeric: tabular-nums; }
 .lt-name > span { display: flex; align-items: center; gap: 9px; font-weight: 700; color: var(--text-2); }
+.game-rating {
+  display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; padding: 6px 16px 12px;
+  border-bottom: 1px solid var(--line); margin-bottom: 6px; cursor: help;
+}
+.gr-val { text-align: center; font-weight: 900; font-size: 17px; font-variant-numeric: tabular-nums; }
+.gr-mid { color: var(--text-2); font-weight: 700; font-size: 14px; text-align: center; }
+.phase-table { margin-top: 6px; border-top: 1px solid var(--line); }
+.phase-table td { padding-top: 7px; padding-bottom: 7px; }
+.phase-table .lt-name > span { justify-content: center; }
+.grade-cell { display: inline-flex; cursor: help; }
 .key-moments { padding: 10px 16px 0; }
 .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
 .key-item {

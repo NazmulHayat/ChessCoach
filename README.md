@@ -36,7 +36,7 @@ Where the 12M positions came from: about 1 in 9 games in the Lichess dump was al
 
 - **Import** from a Chess.com or Lichess username (recent games, no login), or paste a PGN.
 - **Live analysis**: Stockfish runs on a pool of parallel engines (a 60-move game at depth 17 in about 8 s); progress streams to the page.
-- **Summary**: accuracy for both players, label counts, key moments, advantage graph.
+- **Summary**: accuracy for both players, an estimated **game rating** (what rating you played like, fitted on 397k Lichess player-games: blitz error 292 points vs 362 for a blind guess), label counts, **opening / middlegame / endgame grades**, key moments, advantage graph.
 - **Review**: board with move badges, last-move highlight and best-move arrows; eval bar that switches between **Chances** (EP) and raw **Engine** score; a coach that explains each move and points out where an eval-only review would disagree; clickable graph; move list; keyboard (← → Home End, Space to play, F to flip).
 - **Labels** use Chess.com's published expected-points bands: best (engine move), excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%, plus book moves from a polyglot opening book.
 - **Great / Miss / Brilliant**: our own documented rules on the engine's top two lines. Great = the only good move; Miss = gives back most of the opponent's mistake; Brilliant = a sound sacrifice (static-exchange check) that wasn't needed to stay winning. Thresholds scale with rating. Rules in [`docs/methodology.md`](docs/methodology.md#great-miss-and-brilliant).
@@ -120,7 +120,7 @@ Pipeline details: [`ep_model/README.md`](ep_model/README.md). Design decisions a
 ## Roadmap
 
 - Pretrain on all 46M harvested positions (memory permitting) and finish the Stockfish test set.
-- Move sounds, estimated game rating, opening / middlegame / endgame grades.
+- Move sounds.
 
 ## Credits
 
