@@ -24,7 +24,7 @@ export function MoveList({ moves, current, onSelect }: Props) {
 
   const cell = (m: ReviewMove | undefined) =>
     m ? (
-      <button type="button" className={`move-cell ${m.ply === current ? 'current' : ''}`} onClick={() => onSelect(m.ply)}>
+      <button type="button" data-ply={m.ply} className={`move-cell ${m.ply === current ? 'current' : ''}`} onClick={() => onSelect(m.ply)}>
         <LabelIcon label={m.ep_label} size={16} />
         <span>{m.san}</span>
       </button>

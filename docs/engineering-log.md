@@ -10,6 +10,8 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-03 | Pivot to an expected-points (EP) model. Phase A (sample positions from a 26 GB Lichess dump), Phase B (Stockfish depth 17, FEN cache, resumable checkpoints, `safe_run` with disk/swap/heat guards), Phase C (LightGBM). Pilot on 3k rows. |
 | 2026-10-25 | Baseline evaluation, training fixes, Phase D review, parallel engines, web app, eval harvesting, pretrain + fine-tune (below). |
 
+| 2026-10-25 | Great / Miss / Brilliant labels (multipv=2, SEE-based sacrifice check), Retry mode with server-side scoring of tried moves. |
+
 ## Key numbers
 
 | What | Value |
@@ -27,7 +29,8 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | Calibration | every 10-point bin within 1.5 points |
 | Training run | 12M rows, 734 trees, 252 s on a laptop |
 | App latency | full 62-move game reviewed at depth 17 in 8.1 s (4 engines) |
-| Tests | 27 pytest tests (row generation, features, evaluation, review logic, harvest parsing) |
+| multipv=2 cost | 0.414 → 0.605 s/position at depth 17 (+46%); top-line eval drift median 7.5 cp, p90 27 cp (120 positions) |
+| Tests | 37 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, harvest parsing) |
 
 ## Problems solved
 
@@ -41,12 +44,15 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 9. **More data alone didn't win: distribution shift.** Trained only on the harvested positions, the model was slightly overconfident on the clean test set (predicted 64%, actual 61%) and not significantly better than the clean-only model (+0.0024, CI −0.0018 to +0.0065). Diagnosed: different search budget and self-selected games. Fixed with pretrain-then-fine-tune (continue the boosted trees on clean data, early-stopped on clean games outside the test set): significantly better than both.
 10. **Proving the gain is real.** Added a paired bootstrap over whole games (positions in a game are correlated) so every model comparison reports a 95% CI, not just a point estimate.
 8. **Rating pools differ.** The model learned Lichess ratings; Chess.com ratings are mapped onto that scale per time class.
+11. **"Sacrifice" needs a counterfactual too.** A naive "piece left en prise" check calls every trapped piece a sacrifice. The SEE-based check compares the move against the safest legal alternative and only counts material the player chose to give up.
+12. **Drag-and-drop died after the first wrong retry.** Two react-chessboard quirks: dragging is wired up only when the board mounts (toggling `arePiecesDraggable` later leaves pieces undraggable), and its drop handler can be a closure from an earlier render. Fixed by keeping the board draggable for the whole retry session (remount per session) and reading the current move handler through a ref. Found with a scripted Playwright test that drags pieces.
 
 ## Product
 
 - FastAPI server: streamed analysis (server-sent events), parallel engine pool with FEN cache, Chess.com and Lichess public-API import.
 - React + Vite + TypeScript UI modelled on Chess.com's Game Review layout: board with move badges and best-move arrows, eval bar (EP or engine), coach text, clickable advantage graph, move list, keyboard controls, summary with accuracy, label counts and key moments.
-- Labels follow Chess.com's published expected-points bands; book moves from a polyglot opening book.
+- Labels follow Chess.com's published expected-points bands; book moves from a polyglot opening book; Great / Miss / Brilliant from documented rules on the engine's top two lines.
+- Retry mode: replay a mistake on the board, judged by the same EP model; "Next mistake" steps through your own errors.
 
 ## Findings worth telling
 

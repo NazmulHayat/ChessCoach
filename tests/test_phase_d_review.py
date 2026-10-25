@@ -106,3 +106,35 @@ def test_rating_pool():
     assert detect_pool({"Site": "https://lichess.org/abc"}) == "lichess"
     assert to_lichess_scale(1500, "lichess", "blitz") == 1500
     assert 1650 < to_lichess_scale(1457, "chesscom", "blitz") < 1750
+
+
+class _StubModel:
+    """EP = 0.5 + eval_cp_stm / 1000 for the side to move (enough to check the plumbing)."""
+
+    def predict_rows(self, rows):
+        return np.array([0.5 + (r["eval_cp_stm"] or 0) / 1000.0 for r in rows])
+
+
+def test_score_attempt_uses_after_context_and_attempt_eval():
+    from ep_model.phase_d.review import score_attempt
+
+    fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    rows = [_row(), _row(side_to_move="b", ply=2)]
+    move = {"ply": 1, "fen_before": fen, "best_uci": "e2e4", "best_san": "e4", "best_line_san": ["e4", "e5"], "ep_best": 0.53}
+    calls = []
+
+    def analyse_one(f):
+        calls.append(f)
+        return {"eval_cp_white": -20, "mate_white": None, "eval_cp_stm": 100, "mate_stm": None, "eval_depth": 10}
+
+    best = score_attempt(rows, move, "e2e4", _StubModel(), analyse_one)
+    assert best["correct"] and best["ep_loss"] == 0 and not calls  # engine move: no engine call
+    bad = score_attempt(rows, move, "g2g4", _StubModel(), analyse_one)
+    assert calls and bad["san"] == "g4"
+    assert abs(bad["ep_after"] - 0.4) < 1e-9 and abs(bad["ep_loss"] - 0.13) < 1e-9
+    assert not bad["correct"] and bad["label"] == "mistake"
+    try:
+        score_attempt(rows, move, "e2e5", _StubModel(), analyse_one)
+        raise AssertionError("illegal move accepted")
+    except ValueError:
+        pass

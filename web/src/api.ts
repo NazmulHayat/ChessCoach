@@ -1,4 +1,4 @@
-import type { GameListItem, Review } from './types'
+import type { GameListItem, RetryResult, Review } from './types'
 
 async function errorDetail(r: Response): Promise<string> {
   try {
@@ -49,4 +49,18 @@ export async function streamReview(
     }
   }
   throw new Error('Connection closed before the analysis finished')
+}
+
+export class GoneError extends Error {}
+
+/** Score a move tried in retry mode. Throws GoneError if the server no longer has this review. */
+export async function retryMove(reviewId: string, ply: number, uci: string): Promise<RetryResult> {
+  const r = await fetch('/api/retry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ review_id: reviewId, ply, uci }),
+  })
+  if (r.status === 410) throw new GoneError(await errorDetail(r))
+  if (!r.ok) throw new Error(await errorDetail(r))
+  return r.json()
 }

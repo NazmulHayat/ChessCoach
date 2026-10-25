@@ -60,6 +60,28 @@ Both numbers are scored on an *opponent-to-move* row with identical context (sam
 
 Labels then use Chess.com's published bands: best (engine move), excellent < 0.02, good < 0.05, inaccuracy < 0.10, mistake < 0.20, blunder ≥ 0.20. Book moves come from a polyglot opening book. The same bands applied to the Lichess win% curve give the "eval-only" label the coach compares against.
 
+### Great, Miss and Brilliant
+
+Chess.com describes these only in words, so these are our own rules, written in expected points. The engine runs with `multipv=2`, so the second-best move and its eval are known; its EP is scored with the same counterfactual row as the best move. Code: `ep_model/phase_d/special.py`, tests: `tests/test_phase_d_special.py`.
+
+| Label | Rule (mover's EP) |
+|---|---|
+| **Great** | The engine's best move, and the second-best move is at least *G* worse (an only move), or the best move keeps a better outcome band (losing < 30%, winning > 70%) than the second-best with a gap ≥ 5%. Not for forced moves (one legal move), immediate recaptures on the square the opponent just captured on, or mate in one. |
+| **Miss** | The opponent's previous move gave away ≥ 10% and this move gives back at least half of it (and ≥ 5%), but doesn't drop the mover below where they stood before the gift (minus 5%). Falling further than that is a plain mistake / blunder. |
+| **Brilliant** | A best or near-best move (EP loss ≤ *B*) that gives up ≥ 2 points of material, leaves the mover at ≥ 45%, and wasn't needed: the alternative (second-best move, or the best move if this wasn't it) keeps < 90%. |
+
+**Material given up** uses a static exchange evaluation (SEE) built on python-chess legal moves, so pins and x-rays count: after the move, the opponent's best capture sequence on any one square, minus what the move itself captured (`Bxf7+ Kxf7` = 3 − 1 = 2). It only counts as a sacrifice if a safer legal move existed (at least 2 points less given up), so a trapped piece that is lost anyway isn't "sacrificed".
+
+**Rating-dependent thresholds** (Lichess scale, linear between 1000 and 2200, clamped): the Great gap *G* goes from 10% to 15%, and the Brilliant tolerance *B* from 3% to 1%. The EP curve is steeper at higher ratings (the same engine gap costs more expected points), so a fixed gap would make Great fire more often for strong players; the looser Brilliant tolerance at low ratings mirrors Chess.com being more generous with Brilliant there.
+
+Priority: book > brilliant > great > miss > the EP band label. The band label is kept as `base_label`, and the "eval-only review would say…" comparison uses it.
+
+**multipv=2 cost**, measured on 120 positions at depth 17 (one thread): 0.414 → 0.605 s per position (+46%). The top line's eval moves slightly (median 7.5 cp, 90th percentile 27 cp) compared with the single-line search the model was trained on.
+
+### Retry mode
+
+On a mistake, miss or blunder, the board takes a move for the side that erred (drag, or tap a piece then a square; chess.js checks legality). The engine's best move is accepted instantly. Any other move is scored on the server like a played move (same context row as the real move, eval of the position after the attempt) and counts as correct if it loses ≤ 2% EP against the best move. After two wrong tries the best line is shown. Reviews are kept in a 200-entry in-memory LRU for this; if the server has restarted, the app falls back to accepting the engine's top move (or the second-best if it is within 2%).
+
 **Accuracy** per move uses Lichess's published accuracy curve applied to EP loss in percentage points; a player's accuracy is the mean over their moves. Chess.com's CAPS formula is not public, so numbers are not directly comparable to theirs.
 
 **Eval bar and graph** show white's EP averaged over the actual side-to-move view and a mirrored view of the same position, so the curve doesn't zig-zag with whoever is on move.
@@ -74,4 +96,4 @@ The model learned Lichess ratings. Chess.com ratings run lower, most at the bott
 - The harvested pretraining set is self-selected (games someone chose to analyse); fine-tuning on the random clean set corrects the measurable part of that shift, and the test set is drawn only from the clean sample.
 - Positions within a game share one label, so the effective sample size is closer to the number of games than the number of positions.
 - The model scores positions, not plans: a move that loses chances because of a long-term idea Stockfish sees at depth 17 is judged by that eval.
-- Great / Miss / Brilliant labels are not implemented yet; when they are, they will be our own documented heuristics, not a claim to match Chess.com exactly.
+- Great / Miss / Brilliant are our own documented heuristics, not a claim to match Chess.com's (unpublished) rules.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-LABEL_ORDER = ["best", "excellent", "good", "inaccuracy", "mistake", "blunder"]
+LABEL_ORDER = ["brilliant", "great", "best", "excellent", "good", "book", "inaccuracy", "mistake", "miss", "blunder"]
 
 
 def _white_to_move_series(r: dict[str, Any], key: str) -> list[tuple[int, float]]:
@@ -74,7 +74,7 @@ def render_html(r: dict[str, Any]) -> str:
     rows = []
     for m in r["moves"]:
         num = f"{m['move_number']}{'.' if m['mover'] == 'white' else '…'}"
-        differs = m["ep_label"] != m["lichess_label"]
+        differs = m.get("base_label", m["ep_label"]) != m["lichess_label"]
         best = "" if m["ep_label"] == "best" else esc(m["best_san"] or "")
         rows.append(
             f'<tr class="{"differs" if differs else ""}"><td class="num">{num}</td><td class="san">{esc(m["san"])}</td>'
@@ -85,7 +85,7 @@ def render_html(r: dict[str, Any]) -> str:
             f'<td class="san muted">{best}</td></tr>'
         )
 
-    n_diff = sum(1 for m in r["moves"] if m["ep_label"] != m["lichess_label"])
+    n_diff = sum(1 for m in r["moves"] if m.get("base_label", m["ep_label"]) != m["lichess_label"])
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -94,7 +94,7 @@ def render_html(r: dict[str, Any]) -> str:
 :root {{
   --bg:#f7f6f3; --surface:#ffffff; --text:#1d1d1f; --muted:#6b6b70; --line:#e4e2dc;
   --ep:#2f6fdb; --lichess:#a3a3a8; --hl:#fff6dc;
-  --best:#1e8e5a; --excellent:#3aa676; --good:#7a8b99; --inaccuracy:#d29a1e; --mistake:#e0702a; --blunder:#d13b3b;
+  --brilliant:#1baaa6; --great:#5c8bb0; --book:#a88865; --miss:#ee6b55; --best:#1e8e5a; --excellent:#3aa676; --good:#7a8b99; --inaccuracy:#d29a1e; --mistake:#e0702a; --blunder:#d13b3b;
 }}
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{
   --bg:#141416; --surface:#1d1d20; --text:#ececef; --muted:#9a9aa2; --line:#2e2e33; --ep:#6c9cff; --lichess:#6a6a72; --hl:#2c2717;

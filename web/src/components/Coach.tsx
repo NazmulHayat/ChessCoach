@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react'
 import type { CoachText } from '../coach'
 import type { Label } from '../types'
 import { LabelIcon } from './LabelIcon'
 
-export function Coach({ text, label }: { text: CoachText; label?: Label }) {
+export function Coach({ text, label, children }: { text: CoachText; label?: Label; children?: ReactNode }) {
   return (
     <div className="coach">
       <div className="coach-avatar" aria-hidden>
@@ -17,6 +18,8 @@ export function Coach({ text, label }: { text: CoachText; label?: Label }) {
         </div>
         <div className="bubble-body">{text.body}</div>
         {text.note && <div className="bubble-note">{text.note}</div>}
+        {text.line && <div className="bubble-line">{text.line}</div>}
+        {children && <div className="coach-actions">{children}</div>}
       </div>
     </div>
   )

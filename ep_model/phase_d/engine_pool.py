@@ -14,12 +14,40 @@ import chess.engine
 from ep_model.phase_b.eval_extract import extract_eval_fields
 
 ProgressFn = Callable[[int, int], None]
+PV_LEN = 8
+
+
+def _empty_second() -> dict[str, Any]:
+    return {"second_uci": None, "second_cp_stm": None, "second_mate_stm": None}
+
+
+def analysis_fields(board: chess.Board, infos: list[dict] | dict) -> dict[str, Any]:
+    """Eval fields of the top line, its first moves (pv_uci), and the second line's move + eval."""
+    if isinstance(infos, dict):
+        infos = [infos]
+    top = infos[0]
+    pv = top.get("pv") or []
+    out: dict[str, Any] = {
+        **extract_eval_fields(board, top),
+        "best_uci": pv[0].uci() if pv else None,
+        "pv_uci": [m.uci() for m in pv[:PV_LEN]],
+        **_empty_second(),
+    }
+    if len(infos) > 1 and infos[1].get("pv"):
+        second = extract_eval_fields(board, infos[1])
+        out["second_uci"] = infos[1]["pv"][0].uci()
+        out["second_cp_stm"] = second["eval_cp_stm"]
+        out["second_mate_stm"] = second["mate_stm"]
+    return out
 
 
 class EnginePool:
     """
     `workers` Stockfish processes, one per thread. analyse() keeps input order and caches results by
     (FEN, depth) so re-reviewing a game, or shared opening positions, cost nothing.
+
+    With multipv=2 each result also carries the second-best move and its eval (second_* fields), which
+    the Great / Brilliant labels need. The top line's eval fields are the same as with multipv=1.
     """
 
     def __init__(
@@ -29,8 +57,10 @@ class EnginePool:
         threads: int = 1,
         hash_mb: int = 64,
         cache_size: int = 50_000,
+        multipv: int = 2,
     ):
         self.workers = max(1, workers)
+        self.multipv = max(1, multipv)
         self._engines: queue.Queue = queue.Queue()
         self._all: list[chess.engine.SimpleEngine] = []
         for _ in range(self.workers):
@@ -47,11 +77,10 @@ class EnginePool:
         board = chess.Board(fen)
         eng = self._engines.get()
         try:
-            info = eng.analyse(board, chess.engine.Limit(depth=depth))
+            infos = eng.analyse(board, chess.engine.Limit(depth=depth), multipv=self.multipv)
         finally:
             self._engines.put(eng)
-        pv = info.get("pv") or []
-        return {**extract_eval_fields(board, info), "best_uci": pv[0].uci() if pv else None}
+        return analysis_fields(board, infos)
 
     def analyse(self, fens: list[str], depth: int, progress: ProgressFn | None = None) -> list[dict[str, Any]]:
         """Eval fields (+ best_uci) for each FEN, in input order."""
@@ -82,6 +111,10 @@ class EnginePool:
             if progress:
                 progress(done, len(fens))
         return results  # type: ignore[return-value]
+
+    def analyse_one(self, fen: str, depth: int) -> dict[str, Any]:
+        """Single position, through the cache (e.g. a move tried in retry mode)."""
+        return self.analyse([fen], depth)[0]
 
     def close(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)

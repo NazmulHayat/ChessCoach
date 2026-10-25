@@ -8,6 +8,7 @@ Usage (repo root):
 API:
   POST /api/review                 {pgn, white_elo?, black_elo?, rating_pool?, depth?} → server-sent events
                                    (event: progress {done, total} …, then event: result {review} or event: error)
+  POST /api/retry                  {review_id, ply, uci} → is this move as good as the engine's? (retry mode)
   GET  /api/games/chesscom/{user}  recent Chess.com games (public API)
   GET  /api/games/lichess/{user}   recent Lichess games (public API)
 """
@@ -20,6 +21,9 @@ import io
 import json
 import logging
 import os
+import threading
+import uuid
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +40,7 @@ from ep_model.phase_a.rowgen import classify_time_class, parse_time_control
 from ep_model.phase_b.augment_evals import load_policy
 from ep_model.phase_d.engine_pool import EnginePool
 from ep_model.phase_d.predictor import EPModel
-from ep_model.phase_d.review import review_game
+from ep_model.phase_d.review import review_game, score_attempt
 
 LOG = logging.getLogger(__name__)
 
@@ -54,6 +58,20 @@ CONFIG: dict[str, Any] = {
     "policy": Path(os.environ.get("CHESSCOACH_POLICY", str(DEFAULT_POLICY))),
 }
 STATE: dict[str, Any] = {}
+# Recent reviews' model rows, so retry mode can score a tried move in the same context. In memory only:
+# after a restart the client falls back to checking the engine's top move.
+REVIEWS: OrderedDict[str, dict[str, Any]] = OrderedDict()
+REVIEWS_MAX = 200
+_reviews_lock = threading.Lock()
+
+
+def _remember_review(result: dict[str, Any]) -> str:
+    rid = uuid.uuid4().hex
+    with _reviews_lock:
+        REVIEWS[rid] = {"rows": result.pop("_rows"), "moves": result["moves"], "depth": result["engine_depth"]}
+        while len(REVIEWS) > REVIEWS_MAX:
+            REVIEWS.popitem(last=False)
+    return rid
 
 
 @asynccontextmanager
@@ -136,7 +154,9 @@ async def review(req: ReviewRequest) -> StreamingResponse:
                 black_elo,
                 req.rating_pool,
                 progress=progress,
+                keep_rows=True,
             )
+            result["review_id"] = _remember_review(result)
             loop.call_soon_threadsafe(events.put_nowait, ("result", result))
         except Exception as e:  # surfaced to the client as an error event
             LOG.exception("review failed")
@@ -152,6 +172,32 @@ async def review(req: ReviewRequest) -> StreamingResponse:
         await task
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+class RetryRequest(BaseModel):
+    review_id: str = Field(min_length=1, max_length=64)
+    ply: int = Field(ge=1, le=2000)
+    uci: str = Field(pattern="^[a-h][1-8][a-h][1-8][qrbn]?$")
+
+
+@app.post("/api/retry")
+async def retry(req: RetryRequest) -> dict[str, Any]:
+    with _reviews_lock:
+        saved = REVIEWS.get(req.review_id)
+    if saved is None:
+        raise HTTPException(status_code=410, detail="This review is no longer on the server; analyse the game again.")
+    if req.ply > len(saved["moves"]):
+        raise HTTPException(status_code=400, detail="No such move.")
+    move = saved["moves"][req.ply - 1]
+    depth = saved["depth"]
+
+    def work() -> dict[str, Any]:
+        return score_attempt(saved["rows"], move, req.uci, STATE["model"], lambda fen: STATE["pool"].analyse_one(fen, depth))
+
+    try:
+        return await asyncio.get_running_loop().run_in_executor(None, work)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 def _result_for(white: str, black: str, user: str, result: str) -> str:

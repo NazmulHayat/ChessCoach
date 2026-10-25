@@ -1,6 +1,16 @@
 // Shapes returned by the FastAPI server (ep_model/phase_d/review.py, server.py).
 
-export type Label = 'best' | 'excellent' | 'good' | 'book' | 'inaccuracy' | 'mistake' | 'blunder'
+export type Label =
+  | 'brilliant'
+  | 'great'
+  | 'best'
+  | 'excellent'
+  | 'good'
+  | 'book'
+  | 'inaccuracy'
+  | 'mistake'
+  | 'miss'
+  | 'blunder'
 export type Side = 'white' | 'black'
 
 export interface ReviewMove {
@@ -17,6 +27,13 @@ export interface ReviewMove {
   best_san: string | null
   best_from: string | null
   best_to: string | null
+  best_line_san: string[]
+  second_san: string | null
+  ep_second: number | null
+  capture: boolean
+  sacrifice: number
+  sacrifice_piece: string | null
+  base_label: Label // EP band label before Great / Miss / Brilliant
   ep_best: number
   ep_after: number
   ep_loss: number
@@ -45,6 +62,7 @@ export interface SideSummary {
 }
 
 export interface Review {
+  review_id?: string
   headers: Record<string, string>
   white_elo: number
   black_elo: number
@@ -78,3 +96,15 @@ export interface GameListItem {
 }
 
 export type Mode = 'chances' | 'engine'
+
+/** POST /api/retry: how a move tried in retry mode compares to the engine's best. */
+export interface RetryResult {
+  uci: string
+  san: string
+  ep_after: number
+  ep_loss: number
+  label: Label
+  correct: boolean
+  best_san: string | null
+  best_line_san: string[]
+}

@@ -1,6 +1,7 @@
-import { createContext, forwardRef, useContext, useMemo } from 'react'
+import { Chess } from 'chess.js'
+import { createContext, forwardRef, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Chessboard } from 'react-chessboard'
-import type { CustomSquareProps, Square } from 'react-chessboard/dist/chessboard/types'
+import type { CustomSquareProps, Piece, Square } from 'react-chessboard/dist/chessboard/types'
 import { initials } from '../format'
 import type { Label, Side } from '../types'
 import { LabelIcon } from './LabelIcon'
@@ -45,8 +46,19 @@ function PlayerBar({ p }: { p: PlayerInfo }) {
   )
 }
 
+/** Retry mode: the board takes moves for `side`; onMove returns false to reject (piece snaps back). */
+export interface BoardInput {
+  side: Side
+  onMove: (from: string, to: string, promotion?: string) => boolean
+}
+
 interface Props {
   fen: string
+  input?: BoardInput | null
+  // Board accepts drags for this whole session; `input` decides whether a drag is allowed right now.
+  // react-chessboard wires up dragging only at mount, so toggling arePiecesDraggable later doesn't work;
+  // changing inputSession remounts the board instead.
+  inputSession?: string | null
   orientation: Side
   white: PlayerInfo
   black: PlayerInfo
@@ -57,14 +69,54 @@ interface Props {
   evalText: string
 }
 
-export function BoardArea({ fen, orientation, white, black, lastMove, badge, arrow, whiteShare, evalText }: Props) {
+export function BoardArea({ fen, input, inputSession, orientation, white, black, lastMove, badge, arrow, whiteShare, evalText }: Props) {
+  // Click-to-move (touch friendly): first click picks a piece, second picks the target.
+  const [selected, setSelected] = useState<string | null>(null)
+  useEffect(() => setSelected(null), [fen, input])
+
+  const targets = useMemo(() => {
+    if (!input || !selected) return []
+    try {
+      return new Chess(fen).moves({ square: selected as Square, verbose: true }).map((m) => m.to)
+    } catch {
+      return []
+    }
+  }, [fen, input, selected])
+
   const squareStyles = useMemo(() => {
     const s: Record<string, Record<string, string>> = {}
     if (lastMove) {
       for (const sq of [lastMove.from, lastMove.to]) s[sq] = { boxShadow: 'inset 0 0 0 999px var(--sq-highlight)' }
     }
+    if (selected) s[selected] = { boxShadow: 'inset 0 0 0 999px var(--sq-select)' }
+    for (const t of targets) s[t] = { ...s[t], backgroundImage: 'radial-gradient(circle, var(--sq-dot) 22%, transparent 24%)' }
     return s
-  }, [lastMove])
+  }, [lastMove, selected, targets])
+
+  const myColor = input ? (input.side === 'white' ? 'w' : 'b') : null
+  // react-chessboard can call drag/drop handlers from an earlier render; read the current values via refs.
+  const live = useRef({ input, fen, myColor })
+  live.current = { input, fen, myColor }
+  const isPromotion = (from: string, to: string) => {
+    try {
+      const p = new Chess(live.current.fen).get(from as Square)
+      return !!p && p.type === 'p' && (to[1] === '8' || to[1] === '1')
+    } catch {
+      return false
+    }
+  }
+
+  function onSquareClick(square: Square, piece: Piece | undefined) {
+    if (!input) return
+    if (piece && piece[0] === myColor) {
+      setSelected(square === selected ? null : square)
+      return
+    }
+    if (selected && targets.includes(square)) {
+      input.onMove(selected, square, isPromotion(selected, square) ? 'q' : undefined)
+      setSelected(null)
+    } else setSelected(null)
+  }
 
   const arrows = useMemo(
     () => (arrow ? [[arrow.from as Square, arrow.to as Square, 'rgba(255, 170, 0, 0.82)'] as [Square, Square, string]] : []),
@@ -78,7 +130,7 @@ export function BoardArea({ fen, orientation, white, black, lastMove, badge, arr
   const bottomAhead = bottomShare >= 0.5
 
   return (
-    <div className="board-area">
+    <div className={`board-area ${input ? 'board-input' : ''}`}>
       <PlayerBar p={top} />
       <div className="board-row">
         <div className={`eval-bar ${orientation === 'black' ? 'eval-flipped' : ''}`} aria-label={`Evaluation ${evalText}`}>
@@ -88,10 +140,19 @@ export function BoardArea({ fen, orientation, white, black, lastMove, badge, arr
         <div className="board">
           <BadgeContext.Provider value={badge}>
             <Chessboard
+              key={inputSession ?? 'view'}
               id="review-board"
               position={fen}
               boardOrientation={orientation}
-              arePiecesDraggable={false}
+              arePiecesDraggable={!!inputSession}
+              isDraggablePiece={({ piece }) => !!live.current.input && piece[0] === live.current.myColor}
+              onPieceDrop={(from, to, piece) => {
+                const cur = live.current.input
+                if (!cur) return false
+                const promo = isPromotion(from, to) ? piece[1].toLowerCase() : undefined
+                return cur.onMove(from, to, promo)
+              }}
+              onSquareClick={onSquareClick}
               areArrowsAllowed={false}
               animationDuration={180}
               customArrows={arrows}

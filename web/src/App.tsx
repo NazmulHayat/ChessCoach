@@ -1,8 +1,8 @@
 import { Chess } from 'chess.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { streamReview } from './api'
-import { moveCoach, startCoach, summaryCoach } from './coach'
-import { BoardArea, type PlayerInfo } from './components/BoardArea'
+import { GoneError, retryMove, streamReview } from './api'
+import { moveCoach, retryCoach, startCoach, summaryCoach } from './coach'
+import { BoardArea, type BoardInput, type PlayerInfo } from './components/BoardArea'
 import { Coach } from './components/Coach'
 import { Controls } from './components/Controls'
 import { Graph } from './components/Graph'
@@ -10,10 +10,36 @@ import { ImportPanel } from './components/ImportPanel'
 import { MoveList } from './components/MoveList'
 import { Summary } from './components/Summary'
 import { engineScore, engineWhiteShare, pct } from './format'
-import { BAD_LABELS } from './labels'
-import type { Mode, Review, Side } from './types'
+import { BAD_LABELS, GRAPH_LABELS, RETRY_LABELS, TOP_LABELS } from './labels'
+import type { Mode, RetryResult, Review, ReviewMove, Side } from './types'
 
 type Stage = 'import' | 'analyzing' | 'summary' | 'review'
+
+/** Retry mode at move `ply`: try → checking → correct | wrong (→ try again | solution). */
+export interface RetryState {
+  ply: number
+  phase: 'try' | 'checking' | 'correct' | 'wrong' | 'solution'
+  fen: string
+  tries: number
+  attempt?: { from: string; to: string }
+  result?: RetryResult
+  error?: string
+}
+
+const RETRY_TOLERANCE = 0.02 // same as the server: within 2% of the best move counts as finding it
+
+/** Fallback when the server no longer has the review: only the engine's top two moves can be judged. */
+function localRetryResult(move: ReviewMove, uci: string, san: string): RetryResult {
+  const isBest = uci === move.best_uci
+  const isSecond = san === move.second_san && move.ep_second !== null
+  const ep = isBest ? move.ep_best : isSecond ? (move.ep_second as number) : NaN
+  const loss = Number.isNaN(ep) ? NaN : Math.max(0, move.ep_best - ep)
+  return {
+    uci, san, ep_after: ep, ep_loss: loss, label: isBest ? 'best' : 'good',
+    correct: isBest || (!Number.isNaN(loss) && loss <= RETRY_TOLERANCE),
+    best_san: move.best_san, best_line_san: move.best_line_san,
+  }
+}
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
@@ -48,12 +74,17 @@ export default function App() {
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<Record<string, string>>({})
+  const [you, setYou] = useState<Side | null>(null)
+  const [retry, setRetry] = useState<RetryState | null>(null)
   const abort = useRef<AbortController | null>(null)
 
   const total = review ? review.moves.length : 0
 
-  const analyze = useCallback(async (pgn: string) => {
+  const analyze = useCallback(async (pgn: string, side?: Side) => {
     abort.current?.abort()
+    setYou(side ?? null)
+    setOrientation(side ?? 'white')
+    setRetry(null)
     const ctrl = new AbortController()
     abort.current = ctrl
     setError(null)
@@ -75,6 +106,7 @@ export default function App() {
 
   const go = useCallback((p: number) => {
     setShowBest(false)
+    setRetry(null)
     setPly((cur) => {
       const max = review ? review.moves.length : 0
       const next = Math.max(0, Math.min(max, p))
@@ -113,9 +145,61 @@ export default function App() {
     return () => clearTimeout(t)
   }, [playing, ply, total, go])
 
+  const startRetry = useCallback((p: number) => {
+    if (!review) return
+    const m = review.moves[p - 1]
+    setPlaying(false)
+    setShowBest(false)
+    setPly(p)
+    setRetry({ ply: p, phase: 'try', fen: m.fen_before, tries: 0 })
+  }, [review])
+
+  const onRetryMove = useCallback((from: string, to: string, promotion?: string): boolean => {
+    if (!review || !retry || retry.phase !== 'try') return false
+    const m = review.moves[retry.ply - 1]
+    const chess = new Chess(m.fen_before)
+    let san: string
+    try {
+      san = chess.move({ from, to, promotion }).san
+    } catch {
+      return false
+    }
+    const uci = from + to + (promotion ?? '')
+    const tries = retry.tries + 1
+    const base = { ply: retry.ply, tries, attempt: { from, to } }
+    setRetry({ ...base, phase: 'checking', fen: chess.fen() })
+    const finish = (result: RetryResult) =>
+      setRetry((cur) => {
+        if (!cur || cur.ply !== base.ply || cur.phase !== 'checking') return cur
+        if (result.correct) return { ...base, phase: 'correct', fen: chess.fen(), result }
+        return { ...base, phase: tries >= 2 ? 'solution' : 'wrong', fen: m.fen_before, result }
+      })
+    if (uci === m.best_uci || !review.review_id) {
+      finish(localRetryResult(m, uci, san))
+    } else {
+      retryMove(review.review_id, retry.ply, uci)
+        .then(finish)
+        .catch((e) => {
+          if (e instanceof GoneError) finish(localRetryResult(m, uci, san))
+          else setRetry((cur) => (cur && cur.phase === 'checking' ? { ...cur, phase: 'try', fen: m.fen_before, error: String(e.message ?? e) } : cur))
+        })
+    }
+    return true
+  }, [review, retry])
+
+  const me: Side = you ?? orientation
+  const myMistakes = useMemo(
+    () => (review ? review.moves.filter((m) => m.mover === me && RETRY_LABELS.includes(m.ep_label)).map((m) => m.ply) : []),
+    [review, me],
+  )
+  const nextMistake = useCallback(() => {
+    if (!myMistakes.length) return
+    go(myMistakes.find((p) => p > ply) ?? myMistakes[0])
+  }, [myMistakes, ply, go])
+
   const move = review && ply > 0 ? review.moves[ply - 1] : null
-  const position = review ? review.positions[ply] : null
-  const fen = review ? (move ? move.fen_after : review.start_fen) : START_FEN
+  const position = review ? review.positions[retry ? retry.ply - 1 : ply] : null
+  const fen = retry ? retry.fen : review ? (move ? move.fen_after : review.start_fen) : START_FEN
 
   const graphValues = useMemo(() => {
     if (!review) return []
@@ -123,7 +207,7 @@ export default function App() {
   }, [review, mode])
 
   const markers = useMemo(
-    () => (review ? review.moves.filter((m) => m.ep_label === 'mistake' || m.ep_label === 'blunder' || m.ep_label === 'inaccuracy').map((m) => ({ ply: m.ply, label: m.ep_label })) : []),
+    () => (review ? review.moves.filter((m) => GRAPH_LABELS.includes(m.ep_label)).map((m) => ({ ply: m.ply, label: m.ep_label })) : []),
     [review],
   )
 
@@ -167,9 +251,19 @@ export default function App() {
   // Mistakes show the best move automatically (like Chess.com); the button toggles it either way.
   const autoBest = move ? BAD_LABELS.includes(move.ep_label) : false
   const bestVisible = autoBest !== showBest
-  const arrow = inReview && move && move.best_from && move.best_to && move.ep_label !== 'best' && move.ep_label !== 'book' && bestVisible
+  let arrow = inReview && !retry && move && move.best_from && move.best_to && !TOP_LABELS.includes(move.ep_label) && bestVisible
     ? { from: move.best_from, to: move.best_to }
     : null
+  if (retry && move && retry.phase === 'solution' && move.best_from && move.best_to) arrow = { from: move.best_from, to: move.best_to }
+
+  const boardInput: BoardInput | null = inReview && retry && retry.phase === 'try' && move ? { side: move.mover, onMove: onRetryMove } : null
+  let lastMove = inReview && move ? { from: move.from, to: move.to } : null
+  let badge = inReview && move ? { square: move.to, label: move.ep_label } : null
+  if (retry) {
+    lastMove = retry.attempt && (retry.phase === 'checking' || retry.phase === 'correct') ? retry.attempt : null
+    badge = retry.phase === 'correct' && retry.attempt && retry.result ? { square: retry.attempt.to, label: retry.result.label } : null
+  }
+  const canRetry = !!move && RETRY_LABELS.includes(move.ep_label)
 
   return (
     <div className="app">
@@ -192,8 +286,10 @@ export default function App() {
             orientation={orientation}
             white={whiteP}
             black={blackP}
-            lastMove={inReview && move ? { from: move.from, to: move.to } : null}
-            badge={inReview && move ? { square: move.to, label: move.ep_label } : null}
+            input={boardInput}
+            inputSession={retry ? `retry-${retry.ply}` : null}
+            lastMove={lastMove}
+            badge={badge}
             arrow={arrow}
             whiteShare={whiteShare}
             evalText={evalText}
@@ -253,7 +349,38 @@ export default function App() {
 
           {inReview && (
             <div className="panel-body review">
-              <Coach text={move ? moveCoach(review, move) : startCoach(review)} label={move?.ep_label} />
+              {retry && move ? (
+                <Coach text={retryCoach(move, retry)} label={retry.phase === 'correct' ? retry.result?.label : undefined}>
+                  {retry.phase === 'try' && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setRetry(null)}>Cancel</button>
+                  )}
+                  {retry.phase === 'wrong' && (
+                    <>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => setRetry({ ...retry, phase: 'try', attempt: undefined, error: undefined })}>Try again</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setRetry({ ...retry, phase: 'solution' })}>Show solution</button>
+                    </>
+                  )}
+                  {(retry.phase === 'correct' || retry.phase === 'solution') && (
+                    <>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => go(ply + 1)}>Continue</button>
+                      {myMistakes.some((p) => p !== ply) && (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={nextMistake}>Next mistake</button>
+                      )}
+                    </>
+                  )}
+                </Coach>
+              ) : (
+                <Coach text={move ? moveCoach(review, move) : startCoach(review)} label={move?.ep_label}>
+                  {canRetry && (
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => startRetry(ply)}>Retry</button>
+                  )}
+                  {myMistakes.length > 0 && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={nextMistake} title={`Your mistakes as ${me}`}>
+                      Next mistake
+                    </button>
+                  )}
+                </Coach>
+              )}
               <div className="graph-wrap">
                 <Graph values={graphValues} current={ply} markers={markers} onSelect={go} />
               </div>
@@ -267,13 +394,13 @@ export default function App() {
                 playing={playing}
               />
               <div className="panel-actions two">
-                <button type="button" className="btn btn-ghost" onClick={() => setStage('summary')}>
+                <button type="button" className="btn btn-ghost" onClick={() => { setRetry(null); setStage('summary') }}>
                   Summary
                 </button>
                 <button
                   type="button"
                   className={`btn ${arrow ? 'btn-secondary' : 'btn-primary'}`}
-                  disabled={!move || move.ep_label === 'best' || move.ep_label === 'book'}
+                  disabled={!move || !!retry || TOP_LABELS.includes(move.ep_label)}
                   onClick={() => setShowBest((s) => !s)}
                 >
                   {arrow ? 'Hide best' : 'Show best'}

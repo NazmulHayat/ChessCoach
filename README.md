@@ -39,6 +39,8 @@ Where the 12M positions came from: about 1 in 9 games in the Lichess dump was al
 - **Summary**: accuracy for both players, label counts, key moments, advantage graph.
 - **Review**: board with move badges, last-move highlight and best-move arrows; eval bar that switches between **Chances** (EP) and raw **Engine** score; a coach that explains each move and points out where an eval-only review would disagree; clickable graph; move list; keyboard (← → Home End, Space to play, F to flip).
 - **Labels** use Chess.com's published expected-points bands: best (engine move), excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%, plus book moves from a polyglot opening book.
+- **Great / Miss / Brilliant**: our own documented rules on the engine's top two lines. Great = the only good move; Miss = gives back most of the opponent's mistake; Brilliant = a sound sacrifice (static-exchange check) that wasn't needed to stay winning. Thresholds scale with rating. Rules in [`docs/methodology.md`](docs/methodology.md#great-miss-and-brilliant).
+- **Retry**: on a mistake, miss or blunder, play a better move on the board (drag or tap). The server scores your attempt with the same EP model; within 2% of the best move counts. **Next mistake** steps through your own errors.
 
 ## Quick start
 
@@ -118,8 +120,6 @@ Pipeline details: [`ep_model/README.md`](ep_model/README.md). Design decisions a
 ## Roadmap
 
 - Pretrain on all 46M harvested positions (memory permitting) and finish the Stockfish test set.
-- Great / Miss / Brilliant labels (needs the engine's second-best move).
-- "Retry move": find the better move yourself on the board.
 - Move sounds, estimated game rating, opening / middlegame / endgame grades.
 
 ## Credits

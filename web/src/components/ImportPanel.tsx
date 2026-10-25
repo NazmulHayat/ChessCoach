@@ -23,7 +23,7 @@ function remember(key: string, value: string) {
   }
 }
 
-export function ImportPanel({ onAnalyze }: { onAnalyze: (pgn: string) => void }) {
+export function ImportPanel({ onAnalyze }: { onAnalyze: (pgn: string, you?: 'white' | 'black') => void }) {
   const [tab, setTab] = useState<Tab>(() => (remembered('cc.tab') as Tab) || 'chesscom')
   const [user, setUser] = useState(() => remembered(`cc.user.${tab}`))
   const [games, setGames] = useState<GameListItem[] | null>(null)
@@ -98,7 +98,7 @@ export function ImportPanel({ onAnalyze }: { onAnalyze: (pgn: string) => void })
                 const opp = meWhite ? g.black : g.white
                 const oppElo = meWhite ? g.black_elo : g.white_elo
                 return (
-                  <button type="button" key={g.id} className="game-item" onClick={() => onAnalyze(g.pgn)}>
+                  <button type="button" key={g.id} className="game-item" onClick={() => onAnalyze(g.pgn, meWhite ? 'white' : 'black')}>
                     <span className={`result-dot ${g.user_result}`} aria-label={g.user_result} />
                     <span className="game-main">
                       <span className="game-opp">

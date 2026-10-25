@@ -8,6 +8,7 @@ The same thresholds applied to the Lichess win% curve give the eval-only label f
 
 Labels follow Chess.com's published expected-points bands (Classification V2): best = engine move,
 excellent < 0.02, good < 0.05, inaccuracy < 0.10, mistake < 0.20, blunder >= 0.20, plus book moves.
+Great / Miss / Brilliant are our own rules on top (special.py); they need the engine's second line.
 
 Usage (repo root):
   python -m ep_model.phase_d.review game.pgn
@@ -42,6 +43,7 @@ from ep_model.phase_c.evaluate import lichess_expected
 from ep_model.phase_c.prepare import cp_or_mate_proxy
 from ep_model.phase_d.predictor import EPModel
 from ep_model.phase_d.ratings import detect_pool, to_lichess_scale
+from ep_model.phase_d.special import is_brilliant, is_great, is_miss, sacrifice_points, sacrificed_piece, thresholds_for
 
 LOG = logging.getLogger(__name__)
 
@@ -52,6 +54,9 @@ BOOK_MAX_PLY = 30
 # Lichess curve, so label differences come from the model, not the thresholds.
 LABELS = [(0.02, "excellent"), (0.05, "good"), (0.10, "inaccuracy"), (0.20, "mistake")]
 WORST_LABEL = "blunder"
+
+# Labels that mean "you lost something here": retry mode, key moments, best-move arrow.
+BAD_LABELS = ("inaccuracy", "mistake", "blunder", "miss")
 
 # fens, progress(done, total) -> eval fields + best_uci per FEN (see EnginePool.analyse)
 AnalyseFn = Callable[[list[str], Callable[[int, int], None] | None], list[dict[str, Any]]]
@@ -102,8 +107,12 @@ def best_move_row(before: dict[str, Any], after: dict[str, Any]) -> dict[str, An
     Counterfactual opponent-to-move row for "mover played the engine's best move": the context of
     the real position after the move (ply, clocks, side), with the eval carried over from before.
     """
+    return counterfactual_row(after, before["eval_cp_stm"], before["mate_stm"])
+
+
+def counterfactual_row(after: dict[str, Any], cp: int | None, mate: int | None) -> dict[str, Any]:
+    """`after`'s context with the opponent to move, scored as if the mover's move had eval (cp, mate) for them."""
     row = dict(after)
-    cp, mate = before["eval_cp_stm"], before["mate_stm"]
     row["terminal"] = None
     if mate is not None:
         if mate > 0:
@@ -116,6 +125,18 @@ def best_move_row(before: dict[str, Any], after: dict[str, Any]) -> dict[str, An
     else:
         row["eval_cp_stm"], row["mate_stm"] = (-cp if cp is not None else None), None
     return _with_white_fields(row)
+
+
+def _san_line(fen: str, ucis: list[str]) -> list[str]:
+    b = chess.Board(fen)
+    out = []
+    for u in ucis:
+        mv = chess.Move.from_uci(u)
+        if mv not in b.legal_moves:
+            break
+        out.append(b.san(mv))
+        b.push(mv)
+    return out
 
 
 def mirrored_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -139,7 +160,12 @@ def review_game(
     rating_pool: str = "auto",
     book_path: Path | None = DEFAULT_BOOK,
     progress: Callable[[int, int], None] | None = None,
+    keep_rows: bool = False,
 ) -> dict[str, Any]:
+    """
+    Full review: per-move labels, summary, display series. keep_rows=True adds "_rows" (the model rows per
+    position), which score_attempt needs to judge a move tried in retry mode; strip it before sending.
+    """
     h = game.headers
     w_elo_raw = _elo(h, "WhiteElo", white_elo)
     b_elo_raw = _elo(h, "BlackElo", black_elo)
@@ -202,6 +228,11 @@ def review_game(
         best = chess.Move.from_uci(ev["best_uci"]) if ev.get("best_uci") else None
         pos["best_uci"] = best.uci() if best else None
         pos["best_san"] = b.san(best) if best else None
+        pos["best_line_san"] = _san_line(pos["fen"], ev.get("pv_uci") or [])
+        second = chess.Move.from_uci(ev["second_uci"]) if ev.get("second_uci") else None
+        pos["second_uci"] = second.uci() if second else None
+        pos["second_san"] = b.san(second) if second else None
+        pos["second_cp_stm"], pos["second_mate_stm"] = ev.get("second_cp_stm"), ev.get("second_mate_stm")
 
     ep = model.predict_rows(positions)
     ep_mirror = model.predict_rows([mirrored_row(p) for p in positions])
@@ -223,6 +254,15 @@ def review_game(
 
     best_rows = [best_move_row(positions[i], positions[i + 1]) for i in range(len(nodes))]
     best_ep = model.predict_rows(best_rows)
+    # Second-best move, same counterfactual construction (mover's EP had they played it).
+    second_idx = [i for i in range(len(nodes)) if positions[i]["second_uci"]]
+    second_rows = [
+        counterfactual_row(positions[i + 1], positions[i]["second_cp_stm"], positions[i]["second_mate_stm"]) for i in second_idx
+    ]
+    second_pred = model.predict_rows(second_rows)
+    ep_second_by_ply: dict[int, float] = {}
+    for i, row, e in zip(second_idx, second_rows, second_pred):
+        ep_second_by_ply[i] = 1.0 - (row["terminal"] if row["terminal"] is not None else float(e))
 
     book = None
     if book_path is not None and Path(book_path).is_file():
@@ -241,6 +281,13 @@ def review_game(
             if in_book and i < BOOK_MAX_PLY:
                 is_book = any(e.move == mv for e in book.find_all(board))
             in_book = in_book and is_book
+            legal_count = board.legal_moves.count()
+            prev = moves[-1] if moves else None
+            is_recapture = (
+                prev is not None and prev["capture"] and mv.to_square == chess.parse_square(prev["to"]) and board.is_capture(mv)
+            )
+            is_capture = board.is_capture(mv)
+            board_before = board.copy(stack=False)
             board.push(mv)
             is_best = mv.uci() == before["best_uci"]
             # Mover's point of view: after the move it is the opponent to move, so flip.
@@ -250,7 +297,26 @@ def review_game(
             li_best, li_after = before["lichess_stm"], 1.0 - after["lichess_stm"]
             ep_loss = 0.0 if (is_best or is_book) else max(0.0, ep_best - ep_after)
             li_loss = 0.0 if (is_best or is_book) else max(0.0, li_best - li_after)
-            ep_label = "book" if is_book else label_for_loss(ep_loss, is_best)
+            base_label = "book" if is_book else label_for_loss(ep_loss, is_best)
+            ep_second = ep_second_by_ply.get(i)
+            mover_elo = before["elo_to_move"]
+            special = None
+            sac, sac_piece = 0, None
+            if not is_book:
+                # Brilliant: alternative = the second line if this was the best move, else the best move.
+                alt = ep_second if is_best else ep_best
+                if ep_loss <= thresholds_for(mover_elo).brilliant_max_loss:
+                    sac = sacrifice_points(board_before, mv)
+                if is_brilliant(ep_loss, ep_after, alt, mover_elo, sac):
+                    special = "brilliant"
+                    sac_piece = sacrificed_piece(board_before, mv)
+                elif is_great(is_best, ep_best, ep_second, mover_elo, legal_count, is_recapture, board.is_checkmate()):
+                    special = "great"
+                elif prev is not None and is_miss(
+                    is_best, ep_loss, ep_after, prev["ep_loss"], 1.0 - prev["ep_best"]
+                ):
+                    special = "miss"
+            ep_label = special or base_label
             best_mv = chess.Move.from_uci(before["best_uci"]) if before["best_uci"] else None
             moves.append(
                 {
@@ -267,6 +333,13 @@ def review_game(
                     "best_san": before["best_san"],
                     "best_from": chess.square_name(best_mv.from_square) if best_mv else None,
                     "best_to": chess.square_name(best_mv.to_square) if best_mv else None,
+                    "best_line_san": before["best_line_san"],
+                    "second_san": before["second_san"],
+                    "ep_second": ep_second,
+                    "capture": is_capture,
+                    "sacrifice": sac,
+                    "sacrifice_piece": sac_piece,
+                    "base_label": base_label,
                     "cp_before": before["cp_stm"],
                     "ep_best": ep_best,
                     "ep_after": ep_after,
@@ -297,15 +370,16 @@ def review_game(
             "labels": counts,
         }
 
-    # Key moments: the biggest EP drops that reached at least "mistake".
+    # Key moments: the biggest EP drops that reached at least "mistake" (or a miss), plus brilliant moves.
     key = sorted(
-        (m for m in moves if m["ep_label"] in ("mistake", "blunder")), key=lambda m: m["ep_loss"], reverse=True
+        (m for m in moves if m["ep_label"] in ("mistake", "blunder", "miss")), key=lambda m: m["ep_loss"], reverse=True
     )[:5]
+    key += [m for m in moves if m["ep_label"] == "brilliant"][:2]
 
     def white_display_cp(p: dict[str, Any]) -> dict[str, Any]:
         return {"cp": p["eval_cp_white"], "mate": p["mate_white"]}
 
-    return {
+    out = {
         "headers": dict(h),
         "white_elo": w_elo_raw,
         "black_elo": b_elo_raw,
@@ -331,6 +405,50 @@ def review_game(
         "summary": summary,
         "key_moments": sorted(m["ply"] for m in key),
     }
+    if keep_rows:
+        out["_rows"] = positions
+    return out
+
+
+RETRY_TOLERANCE = 0.02  # an attempt within this EP of the best move counts as finding it ("excellent" band)
+
+
+def score_attempt(rows: list[dict[str, Any]], move: dict[str, Any], uci: str, model: EPModel, analyse_one) -> dict[str, Any]:
+    """
+    Judge a move tried in retry mode at the position before `move` (a review move dict). The attempt is
+    scored like the played move: the real position's context after the move, with the attempt's eval.
+    analyse_one(fen) -> eval fields of a single FEN (EnginePool.analyse_one).
+    """
+    i = move["ply"] - 1
+    board = chess.Board(move["fen_before"])
+    mv = chess.Move.from_uci(uci)
+    if mv not in board.legal_moves:
+        raise ValueError("Illegal move")
+    san = board.san(mv)
+    board.push(mv)
+    terminal = _terminal_score(board)
+    row = dict(rows[i + 1])
+    row["terminal"] = terminal
+    if uci == move["best_uci"]:
+        ep = move["ep_best"]
+    elif terminal is not None:
+        ep = 1.0 - terminal
+    else:
+        ev = analyse_one(board.fen())
+        row.update({k: ev[k] for k in ("eval_cp_white", "mate_white", "eval_cp_stm", "mate_stm", "eval_depth")})
+        ep = 1.0 - float(model.predict_rows([row])[0])
+    loss = max(0.0, move["ep_best"] - ep)
+    is_best = uci == move["best_uci"]
+    return {
+        "uci": uci,
+        "san": san,
+        "ep_after": ep,
+        "ep_loss": loss,
+        "label": label_for_loss(loss, is_best),
+        "correct": is_best or loss <= RETRY_TOLERANCE,
+        "best_san": move["best_san"],
+        "best_line_san": move["best_line_san"],
+    }
 
 
 def print_review(r: dict[str, Any]) -> None:
@@ -341,7 +459,7 @@ def print_review(r: dict[str, Any]) -> None:
     print(f"{'move':<14}{'EP best':>10}{'EP after':>10}{'EP loss':>9}  {'EP label':<12}{'eval-only':<12}best")
     for m in r["moves"]:
         num = f"{m['move_number']}{'.' if m['mover'] == 'white' else '...'}"
-        flag = " *" if m["ep_label"] != m["lichess_label"] else ""
+        flag = " *" if m["base_label"] != m["lichess_label"] else ""
         print(
             f"{num + ' ' + m['san']:<14}{m['ep_best']:>10.1%}{m['ep_after']:>10.1%}{m['ep_loss']:>9.1%}  "
             f"{m['ep_label']:<12}{m['lichess_label']:<12}{m['best_san'] or ''}{flag}"

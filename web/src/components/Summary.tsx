@@ -1,6 +1,6 @@
 import type { CoachText } from '../coach'
 import { initials, pct } from '../format'
-import { LABEL_ORDER, LABELS } from '../labels'
+import { GRAPH_LABELS, LABEL_ORDER, LABELS } from '../labels'
 import type { Review } from '../types'
 import { Coach } from './Coach'
 import { Graph } from './Graph'
@@ -17,7 +17,7 @@ interface Props {
 export function Summary({ review, coach, graphValues, onStart, onJump }: Props) {
   const white = review.headers.White || 'White'
   const black = review.headers.Black || 'Black'
-  const markers = review.moves.filter((m) => m.ep_label === 'mistake' || m.ep_label === 'blunder').map((m) => ({ ply: m.ply, label: m.ep_label }))
+  const markers = review.moves.filter((m) => GRAPH_LABELS.includes(m.ep_label) && m.ep_label !== 'inaccuracy').map((m) => ({ ply: m.ply, label: m.ep_label }))
   const keyMoves = review.moves.filter((m) => review.key_moments.includes(m.ply))
   const converted = review.rating_pool === 'chesscom'
 
