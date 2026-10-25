@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Phase A (resume, capped) → Phase B (safe_run). Repo root = ChessCoach.
-# Logs: ep_model/processed/phase_a_big.log, safe_run_big.log
+# Phase A (resume, capped) → Phase B (safe_run, parallel engines) → Phase C (train + evaluate).
+# Repo root = ChessCoach. Logs: ep_model/processed/phase_a_big.log, safe_run_big.log
+# WORKERS=8 by default (one single-threaded Stockfish each, ~330 MB RAM per engine).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -14,11 +15,18 @@ python -m ep_model.phase_a.generate_rows \
   --max-games 100000 \
   -v 2>&1 | tee ep_model/processed/phase_a_big.log
 
-echo "=== Phase B: safe_run (30h wall, 130 GiB processed cap, 15 GiB free min) ==="
+WORKERS="${WORKERS:-8}"
+echo "=== Phase B: safe_run (${WORKERS} workers, 48h wall, 130 GiB processed cap, 15 GiB free min) ==="
 python -m ep_model.scripts.safe_run \
-  --max-wall-hours 30 \
+  --policy ep_model/config/engine_policy_parallel.json \
+  --workers "$WORKERS" \
+  --max-wall-hours 48 \
   --max-processed-gib 130 \
   --min-free-gib 15 \
   -v 2>&1 | tee ep_model/processed/safe_run_big.log
 
-echo "=== Done: $(date -u) ==="
+echo "=== Phase C: train on all Phase B shards + evaluate vs baselines ==="
+python -m ep_model.phase_c.train --sharded-load -v
+python -m ep_model.phase_c.evaluate -v
+
+echo "=== Done: $(date -u) — see ep_model/models/ep_eval_report.md ==="

@@ -100,7 +100,12 @@ python -m ep_model.scripts.safe_run --max-processed-gib 120 --min-free-gib 18 --
 
 # Print the Phase B command without running
 python -m ep_model.scripts.safe_run --dry-run
+
+# Fastest: 8 parallel single-threaded engines (~4x throughput on a 10-core laptop, ~330 MB RAM each)
+python -m ep_model.scripts.safe_run --policy ep_model/config/engine_policy_parallel.json --workers 8
 ```
+
+`--workers N` (also on `augment_evals`) runs N Stockfish processes, one per thread; rows, cache and output order are unchanged. Failed batches (e.g. macOS killing an engine under memory pressure) are retried up to `--max-retries` times; finished evals are in the FEN cache, so a retry loses little work. `scripts/run_big_training.sh` chains Phase A → parallel Phase B → train → evaluate.
 
 Phase B already **streams** Parquet row groups in small chunks (no full-file RAM load). Phase C can load shards **one file at a time** with `--sharded-load` (see below).
 
