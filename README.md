@@ -12,7 +12,7 @@
 ![LightGBM](https://img.shields.io/badge/model-LightGBM-9cf)
 ![Stockfish](https://img.shields.io/badge/engine-Stockfish_18_WASM-555)
 
-### [**Try it live → nazmulhayat.github.io/ChessCoach**](https://nazmulhayat.github.io/ChessCoach/)
+### [**Try it live → chesscoach-eta.vercel.app**](https://chesscoach-eta.vercel.app/)
 
 Free, no account, nothing uploaded: Stockfish, the models and the review all run in your browser.
 
@@ -180,7 +180,7 @@ A few of the [26 problems solved](docs/engineering-log.md#problems-solved), each
 
 ## Getting started
 
-**Use it:** [nazmulhayat.github.io/ChessCoach](https://nazmulhayat.github.io/ChessCoach/). Import a Chess.com or Lichess username, paste a PGN, or try the sample game.
+**Use it:** [chesscoach-eta.vercel.app](https://chesscoach-eta.vercel.app/) (mirror: [GitHub Pages](https://nazmulhayat.github.io/ChessCoach/)). Import a Chess.com or Lichess username, paste a PGN, or try the sample game.
 
 **Run the app locally** (Node 18+):
 
