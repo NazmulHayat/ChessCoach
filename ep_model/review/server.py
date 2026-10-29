@@ -57,7 +57,7 @@ DEFAULT_POLICY = REPO / "ep_model" / "config" / "engine_policy_parallel.json"
 DEFAULT_ELO = 1500
 GAMES_LIMIT = 25
 # Chess.com asks API clients to identify themselves.
-HTTP_HEADERS = {"User-Agent": "ChessCoach/0.1 (local EP game review app)"}
+HTTP_HEADERS = {"User-Agent": "elo101/0.1 (local EP game review app)"}
 
 CONFIG: dict[str, Any] = {
     "depth": int(os.environ.get("CHESSCOACH_DEPTH", "0")) or None,
@@ -148,7 +148,7 @@ async def lifespan(app: FastAPI):
         STATE["pool"].close()
 
 
-app = FastAPI(title="ChessCoach", lifespan=lifespan)
+app = FastAPI(title="elo101", lifespan=lifespan)
 
 
 class ReviewRequest(BaseModel):
@@ -408,7 +408,7 @@ if WEB_DIST.is_dir():
 def main(argv: list[str] | None = None) -> int:
     import uvicorn
 
-    p = argparse.ArgumentParser(description="ChessCoach EP review web app")
+    p = argparse.ArgumentParser(description="elo101 EP review web app")
     p.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     p.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     p.add_argument("--depth", type=int, default=None, help="Stockfish depth (default: policy depth, 17)")

@@ -3,7 +3,7 @@ Export what the in-browser review needs into web/public/data:
 
   models/board.json    move-judging EP model (labels, accuracy)
   models/chances.json  clock-aware EP model (eval bar, graph)
-  models/rating.json   game-rating quality model + its meta (inverse tables)
+  models/rating.json   game-rating accuracy curves per time class + our accuracy offset
   polyglot.json        the 781 Polyglot Zobrist keys (hex), for reading the opening book
   book.bin             the opening book itself
 
@@ -123,11 +123,7 @@ def main() -> int:
     export_booster(chances.booster, OUT / "models" / "chances.json")
     rating_dir = REPO / "ep_model" / "review" / "data"
     meta = json.loads((rating_dir / "rating_estimate.json").read_text(encoding="utf-8"))
-    export_booster(
-        lgb.Booster(model_file=str(rating_dir / "rating_lgbm.txt")),
-        OUT / "models" / "rating.json",
-        {"inverse": meta["inverse"], "posterior_sd": meta["posterior_sd"]},
-    )
+    (OUT / "models" / "rating.json").write_text(json.dumps({k: meta[k] for k in ("curves", "offset", "spread")}), encoding="utf-8")
     (OUT / "polyglot.json").write_text(json.dumps([f"{x:016x}" for x in chess.polyglot.POLYGLOT_RANDOM_ARRAY]), encoding="utf-8")
     shutil.copy(rating_dir / "book.bin", OUT / "book.bin")
 

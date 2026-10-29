@@ -87,15 +87,17 @@ Chess.com describes these only in words, so these are our own rules, written in 
 |---|---|
 | **Great** | The engine's best move, and the second-best move is at least *G* worse (an only move), or the best move keeps a better outcome band (losing < 30%, winning > 70%) than the second-best with a gap ≥ 5%. Not for forced moves (one legal move), immediate recaptures on the square the opponent just captured on, or mate in one. |
 | **Miss** | The opponent's previous move gave away ≥ 10% and this move gives back at least half of it (and ≥ 5%), but doesn't drop the mover below where they stood before the gift (minus 5%). Falling further than that is a plain mistake / blunder. |
-| **Brilliant** | A best or near-best move (EP loss ≤ *B*) that gives up ≥ 2 points of material, leaves the mover at ≥ 45%, and wasn't needed: the alternative (second-best move, or the best move if this wasn't it) keeps < 90%. |
+| **Brilliant** | The engine's best move that gives up ≥ 2 points of material, **and the engine's main line accepts the sacrifice and keeps it**: the opponent takes the material within 5 plies and the mover stays ≥ 2 points down for the 3 plies after that (or the line mates). Leaves the mover at ≥ 45%, and wasn't needed: the second-best move keeps < 90%. A quick tactic that wins the piece straight back (the Nxe4 fork trick) or a piece left hanging that the opponent shouldn't take is Best or Great, not Brilliant. |
 
 **Material given up** uses a static exchange evaluation (SEE) built on python-chess legal moves, so pins and x-rays count: after the move, the opponent's best capture sequence on any one square, minus what the move itself captured (`Bxf7+ Kxf7` = 3 − 1 = 2). It only counts as a sacrifice if a safer legal move existed (at least 2 points less given up), so a trapped piece that is lost anyway isn't "sacrificed".
 
-**Rating-dependent thresholds** (Lichess scale, linear between 1000 and 2200, clamped): the Great gap *G* goes from 10% to 15%, and the Brilliant tolerance *B* from 3% to 1%. The EP curve is steeper at higher ratings (the same engine gap costs more expected points), so a fixed gap would make Great fire more often for strong players; the looser Brilliant tolerance at low ratings mirrors Chess.com being more generous with Brilliant there.
+**Rating-dependent threshold** (Lichess scale, linear between 1000 and 2200, clamped): the Great gap *G* goes from 10% to 15%. The EP curve is steeper at higher ratings (the same engine gap costs more expected points), so a fixed gap would make Great fire more often for strong players.
+
+**Stricter Brilliant (2026-10-30).** Brilliant used to accept any best-or-near-best move that left material en prise. On the 450 benchmark games that fired 132 times (0.42% of moves), mostly on quick tactics and on pieces the opponent should not take. Requiring the engine's own move and an accepted, kept sacrifice leaves 11 (0.03%). In Morphy's Opera Game, 16. Qb8+ (mate next) stays Brilliant and 13. Rxd7 (material back three plies later) does not, matching the classical annotations (13. Rxd7!, 16. Qb8+!!).
 
 Priority: book > brilliant > great > miss > the EP band label. The band label is kept as `base_label`, and the "eval-only review would say…" comparison uses it.
 
-**How often they fire** (`python -m ep_model.scripts.label_stats`, 200 random Lichess games, 13,971 moves, depth 17): Great 2.8%, Miss 1.7%, Brilliant 0.31% of moves. The rates are steady across rating bands (Great 2.6–2.9%, Brilliant 0.25–0.53%, Miss 1.6–2.0%), which is what the rating-dependent thresholds are for.
+**How often they fire** (`python -m ep_model.scripts.label_stats`, 200 random Lichess games, 13,971 moves, depth 17): Great 2.8%, Miss 1.7%, Brilliant 0.31% of moves (before the stricter Brilliant rule above). The rates are steady across rating bands (Great 2.6–2.9%, Brilliant 0.25–0.53%, Miss 1.6–2.0%), which is what the rating-dependent thresholds are for.
 
 **multipv=2 cost**, measured on 120 positions at depth 17 (one thread): 0.414 → 0.605 s per position (+46%). The top line's eval moves slightly (median 7.5 cp, 90th percentile 27 cp) compared with the single-line search the model was trained on.
 
@@ -111,23 +113,25 @@ On a mistake, miss or blunder, the board takes a move for the side that erred (d
 
 ### Game rating (performance in this game)
 
-As Chess.com describes it: compare the quality of your moves with what players at your rating typically produce, and move your rating up or down by that. Code: `ep_model/scripts/fit_rating_estimate.py`, `ep_model/review/rating_estimate.py`. Fitted on games from the dump that Lichess's servers had already analysed (an eval after every move, known ratings): 200,000 games, 397k player-games with ≥ 10 moves, 20% of games held out.
+**Rule: more accuracy, higher game rating.** In one game the more accurate player never gets the lower game rating, and across games more accuracy never means less. Code: `ep_model/scripts/fit_rating_estimate.py`, `ep_model/review/rating_estimate.py`.
 
-1. **Quality score.** A small LightGBM model turns rating-free features of one player's moves into a score: mean accuracy, blunder / mistake / inaccuracy / precise-move (< 1%) rates, number of moves, mean |eval|, accuracy in roughly balanced positions (|eval| < 3 pawns) and the share of such moves, time class. Rating-free on purpose: the raw win% drop on the Lichess curve, not the EP model (which takes the rating as an input).
-2. **"Plays like."** The rating whose median quality score equals this game's score (inverse of the median-score-by-rating curve).
-3. **Game rating = R + k·(plays-like − R)**, where R is your rating. One game is noisy evidence, so *k* is the share of the spread that real performance swings can explain, using Elo's classic assumption that single-game performance varies with an SD of 200 points: *k* = 200² / Var(plays-like − R). Fitted *k*: bullet 0.09, blitz 0.14, rapid 0.21, classical 0.53. Fast games are weak evidence, so they move your rating less.
+1. **Accuracy curve.** On 200,000 games Lichess's servers had already analysed (an eval after every move, known ratings; 20% of games held out), the median game accuracy (Lichess's formula, the one the app shows) of players in each 100-point rating bin, per time class, made increasing. Inverted, it gives *X*(accuracy): the rating whose typical game this was. Past its ends it continues along the slope of the last three bins.
+2. **Same anchor for both players**: the game's average rating *A*. Game rating = *A* + 400 · tanh((*X* − *A*) / *s*), where *s* is how widely *X* − rating varies in that time class (bullet 1,749, blitz 1,101, rapid 1,243, classical 782). It stays within FIDE's single-game bound of ±400 but approaches it smoothly, so two accurate players don't both land on the cap.
+3. **Our accuracy runs a little above Lichess's** on the same games (+2.6 bullet and blitz, +2.2 rapid, from the benchmark), so that offset is subtracted before the lookup.
 
-**Check:** players whose game rating came out more than 50 above their rating should actually have played better. Mean score in that game on the held-out games (blitz shown, all time classes agree):
+**Held-out check** (40,000 games):
 
-| Game rating vs your rating | Players | Mean score in that game |
-|---|---|---|
-| more than 50 below | 9,085 | 37.9% |
-| within ±50 | 16,861 | 48.8% |
-| more than 50 above | 9,608 | 63.5% |
+| | Bullet | Blitz | Rapid | Classical |
+|---|---|---|---|---|
+| Games where the order contradicts accuracy | 0 | 0 | 0 | 0 |
+| Same shown number for both players (rounded to 100) | 17.3% | 13.9% | 13.1% | 11.1% |
+| Higher game rating won (decisive games) | 77.8% | 92.0% | 95.7% | 97.1% |
+| Mean score, game rating > 50 above own rating | 62.7% | 68.2% | 68.6% | 70.3% |
+| Mean score, game rating > 50 below own rating | 38.4% | 32.1% | 31.6% | 29.2% |
 
-**Two rejected versions.** (a) Predicting the rating directly (blitz MAE 292 vs 362 for always guessing the median) looked good on paper but pulled every game to the average: a 99.7-accuracy game by a ~1900 player came out at ~1500. (b) Showing "plays like" as is spread far too wide (blitz MAE 430, worse than guessing the median). The opponent's rating is never used. For Chess.com games the result is mapped back to the Chess.com scale.
+On the benchmark, the player with the higher game rating won 95.6% of decisive Lichess games (was 94.5%) and 94.6% of Chess.com games (was 93.6%).
 
-**What the app shows.** The summary shows **plays-like** ("played like a 1950"), with the difference from your rating, as Chess.com's game rating reads. Users found the shrunk number unhelpful in fast games (a bullet game moves it by only 9% of the gap, so it mostly echoed their rating). The trade-off is the wide spread noted in (b): one game says only so much. In bullet the median quality score barely rises with rating (1643 at 1450, 1907 at 2650), so inverting it stretches one game's evidence about 5×: a user's clean 1+0 game came out at 3190 for both ~1570 players. The shown value is therefore capped at your rating ± 400 on the scale you see, FIDE's single-game performance bound. On the 889 benchmark player-games, uncapped plays-like hit the table's top for 42 players; capped, none of the ~1500 players do, and winners still come out above losers (+14 vs −105 vs their rating). The shrunk estimate is still returned by the API (`rating`, `low`, `high`). On the benchmark, the player with the higher plays-like won 94.5% of decisive Lichess games (91% bullet, 92% blitz, 99.7% rapid).
+**Replaced version.** A LightGBM quality score from several features (error rates, accuracy in balanced positions, mean |eval|), inverted per player and capped at the player's own rating ± 400. It could contradict the accuracy on screen: in the Opera Game, 98.8 vs 85.1 accuracy came out 1300 vs 1200 for two 1500s, because a lopsided position counted as "easy". For blitz it separated players less well (63.5% vs 37.9% mean score above / below).
 
 ### Accuracy
 

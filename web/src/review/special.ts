@@ -9,6 +9,8 @@ export const LOSING_BELOW = 0.3
 export const WINNING_ABOVE = 0.7
 export const GREAT_BAND_MIN_GAP = 0.05
 export const SAC_MIN_POINTS = 2
+export const SAC_TAKEN_WITHIN = 5
+export const SAC_HOLD_PLIES = 3
 export const BRILLIANT_MIN_EP_AFTER = 0.45
 export const BRILLIANT_WINNING_CAP = 0.9
 export const MISS_MIN_GIFT = 0.1
@@ -18,7 +20,6 @@ export const MISS_FLOOR_MARGIN = 0.05
 
 export interface Thresholds {
   great_gap: number
-  brilliant_max_loss: number
 }
 
 function lerpByElo(elo: number, lo: number, hi: number, eloLo = 1000, eloHi = 2200): number {
@@ -27,7 +28,7 @@ function lerpByElo(elo: number, lo: number, hi: number, eloLo = 1000, eloHi = 22
 }
 
 export function thresholdsFor(elo: number): Thresholds {
-  return { great_gap: lerpByElo(elo, 0.1, 0.15), brilliant_max_loss: lerpByElo(elo, 0.03, 0.01) }
+  return { great_gap: lerpByElo(elo, 0.1, 0.15) }
 }
 
 export function outcomeBand(ep: number): number {
@@ -251,8 +252,41 @@ export function isMiss(
   return epAfter >= moverEpBeforeGift - MISS_FLOOR_MARGIN
 }
 
-export function isBrilliant(epLoss: number, epAfter: number, epSecond: number | null, elo: number, sacPoints: number): boolean {
-  if (sacPoints < SAC_MIN_POINTS || epLoss > thresholdsFor(elo).brilliant_max_loss) return false
+/** Material of `color` minus the opponent's, in points. */
+export function materialBalance(board: Chess, color: 'w' | 'b'): number {
+  let total = 0
+  for (const row of board.board()) for (const p of row) if (p) total += PIECE_VALUES[p.type] * (p.color === color ? 1 : -1)
+  return total
+}
+
+/**
+ * Along the engine's main line (starting with the move played), does the opponent take the material and the
+ * mover stay at least SAC_MIN_POINTS down for SAC_HOLD_PLIES plies? A line ending in mate counts.
+ */
+export function sacrificeHolds(board: Chess, pvUci: string[]): boolean {
+  const b = new Chess(board.fen())
+  const me = b.turn()
+  const start = materialBalance(b, me)
+  const net: number[] = []
+  let mates = false
+  for (const uci of pvUci) {
+    try {
+      b.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] })
+    } catch {
+      break
+    }
+    net.push(materialBalance(b, me) - start)
+    mates = mates || b.isCheckmate()
+  }
+  for (let k = 1; k < Math.min(net.length, SAC_TAKEN_WITHIN + 1); k++) {
+    if (net[k] <= -SAC_MIN_POINTS) return mates || net.slice(k + 1, k + 1 + SAC_HOLD_PLIES).every((x) => x <= -SAC_MIN_POINTS)
+  }
+  return false
+}
+
+export function isBrilliant(isBest: boolean, epAfter: number, epSecond: number | null, sacPoints: number, holds: boolean): boolean {
+  if (!isBest || sacPoints < SAC_MIN_POINTS || !holds) return false
   if (epAfter < BRILLIANT_MIN_EP_AFTER) return false
+  // Already completely winning without the sacrifice?
   return epSecond === null || epSecond < BRILLIANT_WINNING_CAP
 }

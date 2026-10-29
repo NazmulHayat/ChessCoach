@@ -324,7 +324,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={26} height={26} />
-          <span>ChessCoach</span>
+          <span>elo101</span>
         </div>
         <div className="topbar-actions">
           {review && (

@@ -1,11 +1,7 @@
 // Game rating ("played like") and phase grades: port of ep_model/review/rating_estimate.py.
 import type { Chess } from 'chess.js'
 import { combine } from './accuracy'
-import { pyRound } from './ratings'
-import type { TreeModel } from './types'
 
-export const TIME_CLASSES: Record<string, number> = { bullet: 0, blitz: 1, rapid: 2, classical: 3 }
-export const BALANCED_CP = 300
 export const MIN_MOVES = 10
 export const MAX_SWING = 400
 export const OPENING_PLIES = 20
@@ -18,16 +14,14 @@ export const PHASE_GRADES: [number, string][] = [
   [45, 'mistake'],
 ]
 
-/** Inverse tables and spread per time class, shipped inside rating.json next to the trees. */
+/** Accuracy curves per time class and our accuracy offset (rating.json, from rating_estimate.json). */
 export interface RatingMeta {
-  inverse: Record<string, { score: number[]; rating: number[]; k: number }>
-  posterior_sd: Record<string, number>
+  curves: Record<string, { accuracy: number[]; rating: number[] }>
+  offset: Record<string, number>
+  spread: Record<string, number>
 }
 
 export interface RatingEstimate {
-  rating: number
-  low: number
-  high: number
   plays_like: number
 }
 
@@ -38,28 +32,6 @@ export function winProb(cpMover: number): number {
 
 export function moveAccuracy(loss: number): number {
   return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * loss * 100) - 3.1669))
-}
-
-/** Rating-free features of one player's moves: raw win% drop per move and |eval| (cp) before it. */
-export function features(losses: number[], absCpBefore: number[], timeClass: string): number[] {
-  const n = Math.max(1, losses.length)
-  const acc = losses.map(moveAccuracy)
-  const cps = absCpBefore.map((c) => Math.min(Math.abs(c), 1000))
-  const bal = acc.filter((_, i) => i < cps.length && cps[i] < BALANCED_CP)
-  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
-  const meanAcc = sum(acc) / n
-  return [
-    meanAcc,
-    losses.filter((x) => x >= 0.2).length / n,
-    losses.filter((x) => x >= 0.1 && x < 0.2).length / n,
-    losses.filter((x) => x >= 0.05 && x < 0.1).length / n,
-    losses.filter((x) => x < 0.01).length / n,
-    Math.log(n),
-    sum(cps) / Math.max(1, cps.length),
-    bal.length ? sum(bal) / bal.length : meanAcc,
-    bal.length / n,
-    TIME_CLASSES[timeClass] ?? 1,
-  ]
 }
 
 /** numpy.interp: linear interpolation on increasing xp, clamped to the end values. */
@@ -79,28 +51,41 @@ export function interp(x: number, xp: number[], fp: number[]): number {
   return slope * (x - xp[lo]) + fp[lo]
 }
 
-/** Game rating on the Lichess scale; null with too few moves. */
-export function estimateRating(
-  model: TreeModel,
+export const EDGE_BINS = 3
+
+/** Rating whose typical game in this time class is played at `accuracy` (our accuracy scale). */
+export function playsLike(accuracy: number, timeClass: string, meta: RatingMeta): number {
+  const curve = meta.curves[timeClass] ?? meta.curves.blitz
+  const offset = meta.offset[timeClass] ?? meta.offset.blitz
+  const { accuracy: acc, rating } = curve
+  const a = accuracy - offset
+  const k = Math.min(EDGE_BINS, acc.length - 1)
+  const n = acc.length - 1
+  // Beyond the curve's ends, continue along the slope of its last bins (see rating_estimate.py).
+  if (a < acc[0]) return rating[0] + ((a - acc[0]) * (rating[k] - rating[0])) / (acc[k] - acc[0])
+  if (a > acc[n]) return rating[n] + ((a - acc[n]) * (rating[n] - rating[n - k])) / (acc[n] - acc[n - k])
+  return interp(a, acc, rating)
+}
+
+/**
+ * Game rating per side on the Lichess scale, unrounded; null with too few moves. Both sides are anchored on
+ * the game's average rating, so the more accurate player never gets the lower game rating.
+ */
+export function gameRatings(
   meta: RatingMeta,
-  losses: number[],
-  absCpBefore: number[],
+  accuracy: Record<'white' | 'black', number>,
+  ratings: Record<'white' | 'black', number>,
+  moves: Record<'white' | 'black', number>,
   timeClass: string,
-  playerRating: number,
-): RatingEstimate | null {
-  if (losses.length < MIN_MOVES) return null
-  const score = model.predictVectors([features(losses, absCpBefore, timeClass)])[0]
-  const table = meta.inverse[timeClass] ?? meta.inverse.blitz
-  const playsLike = interp(score, table.score, table.rating)
-  const r = playerRating + table.k * (playsLike - playerRating)
-  const sd = meta.posterior_sd[timeClass] ?? meta.posterior_sd.blitz
-  return {
-    rating: pyRound(r, -1),
-    low: pyRound(r - sd, -1),
-    high: pyRound(r + sd, -1),
-    // FIDE's single-game performance bound (see MAX_SWING in rating_estimate.py).
-    plays_like: pyRound(playerRating + Math.max(-MAX_SWING, Math.min(MAX_SWING, playsLike - playerRating)), -2),
+): Record<'white' | 'black', RatingEstimate | null> {
+  const anchor = (ratings.white + ratings.black) / 2
+  const one = (side: 'white' | 'black'): RatingEstimate | null => {
+    if (moves[side] < MIN_MOVES) return null
+    const x = playsLike(accuracy[side], timeClass, meta)
+    const spread = meta.spread[timeClass] ?? meta.spread.blitz
+    return { plays_like: anchor + MAX_SWING * Math.tanh((x - anchor) / spread) }
   }
+  return { white: one('white'), black: one('black') }
 }
 
 /** Phase of the position (before the move at 1-based `ply`). */

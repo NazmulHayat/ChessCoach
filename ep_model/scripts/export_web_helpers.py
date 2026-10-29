@@ -214,24 +214,16 @@ def accuracy_cases(rng: random.Random) -> dict:
 
 
 def rating_cases(rng: random.Random) -> dict:
-    feats, ests = [], []
-    for k in range(80):
-        n = rng.choice([1, 5, 9, 10, 11, 20, 35, 60])
-        losses = [rng.choice([0.0, rng.uniform(0, 0.04), rng.uniform(0.04, 0.12), rng.uniform(0.1, 0.5)]) for _ in range(n)]
-        cps = [rng.choice([rng.uniform(-200, 200), rng.uniform(-2500, 2500), 299.9, 300.0]) for _ in range(n)]
+    ests = []
+    for _ in range(80):
+        acc = {"white": rng.choice([rng.uniform(40, 100), 100.0, 72.5]), "black": rng.choice([rng.uniform(40, 100), 64.0])}
+        ratings = {"white": rng.randint(400, 2800), "black": rng.randint(400, 2800)}
+        moves = {"white": rng.choice([5, 9, 10, 30]), "black": rng.choice([9, 10, 30])}
         tc = rng.choice(["bullet", "blitz", "rapid", "classical", "unknown"])
-        r = rng.randint(400, 2800)
-        feats.append({"losses": losses, "abs_cp": cps, "time_class": tc, "features": rating_estimate.features(losses, cps, tc)})
-        ests.append({"losses": losses, "abs_cp": cps, "time_class": tc, "rating": r, "result": rating_estimate.estimate_rating(losses, cps, tc, r)})
-    # Raw model scores at the ends of the inverse tables (np.interp clamping).
-    meta = json.loads((REPO / "ep_model" / "review" / "data" / "rating_estimate.json").read_text(encoding="utf-8"))
-    interp = []
-    import numpy as np
-
-    for tc, table in meta["inverse"].items():
-        lo, hi = table["score"][0], table["score"][-1]
-        for x in [lo - 50, lo, (lo + hi) / 2, table["score"][len(table["score"]) // 3], hi, hi + 50]:
-            interp.append([tc, x, float(np.interp(x, table["score"], table["rating"]))])
+        ests.append({"accuracy": acc, "ratings": ratings, "moves": moves, "time_class": tc,
+                     "result": rating_estimate.game_ratings(acc, ratings, moves, tc)})
+    meta = rating_estimate.load_meta()
+    plays = [[tc, a, rating_estimate.plays_like(a, tc, meta)] for tc in ["bullet", "blitz", "rapid", "classical", "unknown"] for a in [0.0, 55.5, 70.0, 80.25, 90.0, 100.0]]
     phases = []
     for fen, ply, in_book in [
         (chess.STARTING_FEN, 1, True), (chess.STARTING_FEN, 25, False), (chess.STARTING_FEN, 25, True),
@@ -253,9 +245,8 @@ def rating_cases(rng: random.Random) -> dict:
     return {
         "win_prob": [[c, rating_estimate.win_prob(c)] for c in [-3000, -300, 0, 42, 1000, 5000]],
         "move_accuracy": [[x, rating_estimate.move_accuracy(x)] for x in [0, 0.001, 0.05, 0.2, 0.7, 1.5]],
-        "features": feats,
         "estimates": ests,
-        "interp": interp,
+        "plays_like": plays,
         "phase_of": phases,
         "phase_grade": grades,
     }
@@ -268,12 +259,25 @@ def label_rule_cases(rng: random.Random) -> dict:
         great.append([args, special.is_great(*args)])
         margs = [rng.random() < 0.2, rng.uniform(0, 0.4), rng.random(), rng.choice([None, rng.uniform(0, 0.5)]), rng.choice([None, rng.random()])]
         miss.append([margs, special.is_miss(*margs)])
-        bargs = [rng.uniform(0, 0.05), rng.random(), rng.choice([None, rng.random(), 0.95]), rng.randint(600, 2800), rng.choice([0, 1, 2, 3, 5, 9])]
+        bargs = [rng.random() < 0.8, rng.random(), rng.choice([None, rng.random(), 0.95]), rng.choice([0, 1, 2, 3, 5, 9]), rng.random() < 0.6]
         brill.append([bargs, special.is_brilliant(*bargs)])
     for elo in (500, 1000, 1300, 1600, 2200, 2900):
-        t = special.thresholds_for(elo)
-        thr.append([elo, t.great_gap, t.brilliant_max_loss])
-    return {"great": great, "miss": miss, "brilliant": brill, "thresholds": thr, "bands": [[x, special.outcome_band(x)] for x in [0, 0.299, 0.3, 0.5, 0.7, 0.701, 1]]}
+        thr.append([elo, special.thresholds_for(elo).great_gap])
+    # Main lines for sacrifice_holds: random legal lines from benchmark positions, captures preferred.
+    holds = []
+    for fen in positions(rng, 40, 160):
+        b = chess.Board(fen)
+        line = []
+        for _ in range(rng.choice([2, 4, 6, 8])):
+            legal = list(b.legal_moves)
+            if not legal:
+                break
+            caps = [m for m in legal if b.is_capture(m)]
+            mv = rng.choice(caps if caps and rng.random() < 0.7 else legal)
+            line.append(mv.uci())
+            b.push(mv)
+        holds.append([fen, line, special.sacrifice_holds(chess.Board(fen), line)])
+    return {"great": great, "miss": miss, "brilliant": brill, "holds": holds, "thresholds": thr, "bands": [[x, special.outcome_band(x)] for x in [0, 0.299, 0.3, 0.5, 0.7, 0.701, 1]]}
 
 
 def main() -> int:

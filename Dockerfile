@@ -1,4 +1,4 @@
-# ChessCoach web app: FastAPI + Stockfish 18 + the built React frontend, one image.
+# elo101 web app (server version): FastAPI + Stockfish 18 + the built React frontend, one image.
 #   docker build -t chesscoach .
 #   docker run -p 8000:8000 -e CHESSCOACH_WORKERS=2 chesscoach
 

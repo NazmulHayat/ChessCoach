@@ -19,6 +19,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-10-25 | Runs fully in the browser (Stockfish WASM workers, models as JSON, review ported to TypeScript with parity tests); static hosting on GitHub Pages. Accuracy switched to Lichess's formula on our evals, chosen on the benchmark. |
 | 2026-10-25 | User-reported bullet game exposed clock-driven labels. Built a fixed benchmark (Lichess, Chess.com, puzzles, known cases; per time class); split the chances model from a board-only move-judging model chosen on it. "Played like" game rating in the UI. |
 | 2026-10-29 | PyTorch MLP comparison (ties the shipped model; not shipped). Repository cleanup: descriptive package names, CI, license. |
+| 2026-10-30 | Renamed to **elo101**, hosted on Vercel. Game rating now follows accuracy; stricter Brilliant. |
 
 ## Key numbers
 
@@ -39,7 +40,8 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | PyTorch MLP vs LightGBM (same 181k clean rows) | 0.5745 / 0.5760 / 0.5766 over 3 seeds vs 0.5788; vs shipped fine-tuned model 0.5746: no significant difference (best −0.0001, 95% CI −0.0026 to +0.0023); 42k parameters, ~10 s per run; not shipped |
 | 25M vs 12M pretraining (both fine-tuned) | 0.5743 vs 0.5746 log loss; paired difference −0.0002, 95% CI −0.0011 to +0.0007: no significant gain, 12M model kept |
 | App latency | full 62-move game at depth 17: 8.1 s with 4 engines and one line per position; 23.8 s after switching to two lines (multipv=2, needed for Great / Brilliant); 0.07 s on a repeat (FEN cache) |
-| Game rating (performance) | your rating + k·(plays-like − rating), fitted on 397k Lichess player-games; held out, blitz: players rated 50+ above their rating in that game scored 63.5% vs 37.9% for 50+ below (48.8% in between) |
+| Game rating (performance) | monotone in accuracy, both players anchored on the game average; 200k analysed games, 0 order contradictions in 40k held out; blitz: 68.2% vs 32.1% mean score above / below own rating (was 63.5% vs 37.9%) |
+| Brilliant | 132 → 11 on 450 benchmark games (0.42% → 0.03% of moves) after requiring an accepted, kept sacrifice |
 | Puzzle validation | 300 Lichess puzzles: solution move best/great/brilliant 99.3%; the puzzle's blunder flagged 100% when the player wasn't already lost (93.0% overall) |
 | Agreement with Lichess's verdicts | 100 games, 6,016 moves: 94.6% of our blunders are also Lichess errors; 1.1% false alarms on moves Lichess leaves unmarked |
 | Accuracy formula | matches Lichess's displayed accuracy within 0.32 points on average (94% within rounding), 762 player scores |
@@ -53,7 +55,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | In-browser review | 61-move bullet game in ~14 s (Chrome, 10-core laptop); Stockfish lite 7 MB, models 9.6 MB JSON; lite vs native evals: median 16 cp, best move same 77.5% |
 | Browser parity | 85 vitest tests: 400 model rows within 1e-9, helper checks on 240 positions / 5,000+ moves, 58 full reviews identical to Python |
 | Accuracy choice (benchmark) | Lichess formula on our evals vs on EP loss: gap to Lichess 3.1 vs 5.6, to Chess.com 8.1 vs 9.1, winner-picking 0.960 vs 0.957 |
-| Tests | 62 pytest tests + 85 Vitest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
+| Tests | 67 pytest tests + 84 Vitest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
 
 ## Problems solved
 
@@ -101,6 +103,9 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 - Chess.com's current Game Review also uses an expected-points model, built from rating and engine eval. This project's model adds time control and clocks, and is evaluated in the open against simpler baselines.
 - Hyperparameter tuning moved log loss by < 0.001; data volume is the lever. That observation is what motivated the harvesting approach.
 
+
+27. **Game rating contradicted the accuracy on screen.** In Morphy's Opera Game, 98.8 vs 85.1 accuracy came out 1300 vs 1200 for two 1500-rated players: the LightGBM quality score treated a lopsided position as an easy game. Replaced it with one monotone accuracy → rating curve per time class (fitted on 200k analysed Lichess games), with both players anchored on the game's average rating, so the order follows accuracy by construction: 0 contradictions in 40,000 held-out games. A hard ±400 cap then tied 54% of bullet games; a smooth limit scaled by each time class's spread, plus continuing the curve past its ends, brought ties down to 11–17% (the rounding to 100). Blitz players who came out above their rating scored 68.2% vs 32.1% below (was 63.5% vs 37.9%); the higher game rating won 95.6% of decisive benchmark games (was 94.5%).
+28. **Brilliant was too easy.** On 450 benchmark games it fired 132 times (0.42% of moves), mostly quick tactics (Nxe4 and a fork wins the piece back) and pieces the opponent simply shouldn't take. Brilliant now needs the engine's own move and a sacrifice the engine's main line accepts and keeps for three plies (or mates): 11 left (0.03%). The Opera Game keeps 16. Qb8+!! and drops 13. Rxd7, as in the classical annotations.
 
 ## UI polish pass (2026-10-25)
 

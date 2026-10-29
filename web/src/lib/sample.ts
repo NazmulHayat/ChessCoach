@@ -1,5 +1,5 @@
 // A short, public-domain mating pattern with original sample player names.
-export const SAMPLE_PGN = `[Event "ChessCoach sample: a queen sacrifice"]
+export const SAMPLE_PGN = `[Event "elo101 sample: a queen sacrifice"]
 [Site "Local"]
 [Date "????.??.??"]
 [White "Alice"]

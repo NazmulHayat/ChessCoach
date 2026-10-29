@@ -1,6 +1,6 @@
 # Lichess Expected Points (EP) Model
 
-Active training code for ChessCoach lives here. Legacy move-review and scripts are under `archive/` (see repo root `README.md`).
+Training code and the reference review for elo101 live here. Legacy move-review and scripts are under `archive/` (see repo root `README.md`).
 
 Minimal project structure for building an EP model from Lichess database exports.
 

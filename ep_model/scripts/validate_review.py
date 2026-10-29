@@ -224,7 +224,7 @@ def run_lichess(args) -> dict:
             for side in ("white", "black"):
                 est = r["summary"][side]["estimated_rating"]
                 if est:
-                    est_pairs.append((est["rating"], r[f"{side}_elo"]))
+                    est_pairs.append((est["plays_like"], r[f"{side}_elo"]))
             if gi < args.repeat:
                 first_labels[gi] = [m["ep_label"] for m in r["moves"]]
             if (gi + 1) % 10 == 0:

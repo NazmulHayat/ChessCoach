@@ -7,7 +7,7 @@ import { combine, moveAccuracyPct, volatilityWeights } from './accuracy'
 import type { Book } from './book'
 import { cpOrMateProxy } from './features'
 import { parsePgn } from './pgn'
-import { estimateRating, MAX_SWING, phaseGrade, phaseOf, type RatingMeta } from './rating'
+import { gameRatings, MAX_SWING, phaseGrade, phaseOf, type RatingMeta } from './rating'
 import { detectPool, fromLichessScale, pyRound, toLichessScale } from './ratings'
 import {
   classifyTimeClass,
@@ -17,7 +17,7 @@ import {
   parseTimeControl,
   ratingBandFromAverage,
 } from './rowgen'
-import { isBrilliant, isGreat, isMiss, sacrificedPiece, sacrificePoints, takesHangingMaterial, thresholdsFor } from './special'
+import { isBrilliant, isGreat, isMiss, sacrificedPiece, sacrificeHolds, sacrificePoints, takesHangingMaterial } from './special'
 import { tacticHint } from './tactics'
 import type { AnalyseFn, EngineFields, ModelRow, ProgressFn, TreeModel } from './types'
 
@@ -36,7 +36,7 @@ const LICHESS_K = 0.00368208
 export interface Models {
   board: TreeModel // judges moves
   chances: TreeModel // clock-aware, for the bar and graph
-  rating: TreeModel & RatingMeta
+  rating: RatingMeta
   book: Book | null
 }
 
@@ -52,6 +52,7 @@ export interface PositionRow extends ModelRow {
   best_uci: string | null
   best_san: string | null
   best_line_san: string[]
+  pv_uci: string[]
   second_uci: string | null
   second_san: string | null
   second_cp_stm: number | null
@@ -245,6 +246,7 @@ export async function reviewGame(pgn: string, models: Models, analyse: AnalyseFn
       best_uci: null,
       best_san: null,
       best_line_san: [],
+      pv_uci: [],
       second_uci: null,
       second_san: null,
       second_cp_stm: null,
@@ -276,7 +278,8 @@ export async function reviewGame(pgn: string, models: Models, analyse: AnalyseFn
     pos.eval_depth = ev.eval_depth
     pos.best_uci = ev.best_uci ?? null
     pos.best_san = sanOf(pos.fen, pos.best_uci)
-    pos.best_line_san = sanLine(pos.fen, ev.pv_uci ?? [])
+    pos.pv_uci = ev.pv_uci ?? []
+    pos.best_line_san = sanLine(pos.fen, pos.pv_uci)
     pos.second_uci = ev.second_uci ?? null
     pos.second_san = sanOf(pos.fen, pos.second_uci)
     pos.second_cp_stm = ev.second_cp_stm
@@ -352,9 +355,9 @@ export async function reviewGame(pgn: string, models: Models, analyse: AnalyseFn
     let sac = 0
     let sacPiece: string | null = null
     if (!isBook) {
-      const alt = isBest ? epSecond : epBest
-      if (epLoss <= thresholdsFor(moverElo).brilliant_max_loss) sac = sacrificePoints(new Chess(fenBefore), uci)
-      if (isBrilliant(epLoss, epAfter, alt, moverElo, sac)) {
+      // Brilliant: only the engine's own move, and only a sacrifice its main line accepts and keeps.
+      if (isBest) sac = sacrificePoints(new Chess(fenBefore), uci)
+      if (isBrilliant(isBest, epAfter, epSecond, sac, sac > 0 && sacrificeHolds(new Chess(fenBefore), before.pv_uci))) {
         special = 'brilliant'
         sacPiece = sacrificedPiece(new Chess(fenBefore), uci)
       } else if (
@@ -410,35 +413,29 @@ export async function reviewGame(pgn: string, models: Models, analyse: AnalyseFn
   moves.forEach((m, k) => (m.weight = weights[k]))
 
   const summary = {} as Review['summary']
+  const perSide = { white: moves.filter((m) => m.mover === 'white'), black: moves.filter((m) => m.mover === 'black') }
+  const accuracy = {
+    white: perSide.white.length ? (combine(perSide.white.map((m) => m.accuracy), perSide.white.map((m) => m.weight ?? 1)) as number) : 100,
+    black: perSide.black.length ? (combine(perSide.black.map((m) => m.accuracy), perSide.black.map((m) => m.weight ?? 1)) as number) : 100,
+  }
+  // Game rating follows the accuracy shown: both sides anchored on the game's average rating.
+  const estimates = gameRatings(models.rating, accuracy, { white: wElo, black: bElo }, { white: perSide.white.length, black: perSide.black.length }, timeClass)
+  const anchorShown = (wEloRaw + bEloRaw) / 2
   for (const side of ['white', 'black'] as Side[]) {
-    const mine = moves.filter((m) => m.mover === side)
+    const mine = perSide[side]
     const counts: Partial<Record<Label, number>> = {}
     for (const m of mine) counts[m.ep_label] = (counts[m.ep_label] ?? 0) + 1
-    const later = mine.filter((m) => m.ply > 1)
-    let est = estimateRating(
-      models.rating,
-      models.rating,
-      later.map((m) => Math.max(0, m.lichess_best - m.lichess_after)),
-      later.map((m) => Math.abs(m.cp_before ?? 0)),
-      timeClass,
-      side === 'white' ? wElo : bElo,
-    )
-    if (est && pool !== 'lichess') {
-      const e = est
-      est = { rating: fromLichessScale(e.rating, pool, timeClass), low: fromLichessScale(e.low, pool, timeClass), high: fromLichessScale(e.high, pool, timeClass), plays_like: fromLichessScale(e.plays_like, pool, timeClass, -2) }
-      // Keep the ±400 single-game bound on the scale the player sees.
-      const own = side === 'white' ? wEloRaw : bEloRaw
-      est.plays_like = pyRound(Math.max(own - MAX_SWING, Math.min(own + MAX_SWING, est.plays_like)), -2)
+    const e = estimates[side]
+    let est: { plays_like: number } | null = null
+    if (e) {
+      // Shown on the player's own scale, within ±400 of the game's average there, rounded to 100.
+      const shown = pool !== 'lichess' ? fromLichessScale(e.plays_like, pool, timeClass, 0) : e.plays_like
+      est = { plays_like: pyRound(Math.max(anchorShown - MAX_SWING, Math.min(anchorShown + MAX_SWING, shown)), -2) }
     }
     summary[side] = {
       moves: mine.length,
       avg_ep_loss: mine.length ? mine.reduce((s, m) => s + m.ep_loss, 0) / mine.length : 0,
-      accuracy: mine.length
-        ? (combine(
-            mine.map((m) => m.accuracy),
-            mine.map((m) => m.weight ?? 1),
-          ) as number)
-        : 100,
+      accuracy: accuracy[side],
       labels: counts,
       estimated_rating: est,
       phases: Object.fromEntries(

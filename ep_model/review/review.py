@@ -42,16 +42,16 @@ from ep_model.training.evaluate import lichess_expected
 from ep_model.training.prepare import cp_or_mate_proxy
 from ep_model.review.predictor import EPModel, board_model_dir
 from ep_model.review.accuracy import combine, move_accuracy_pct, volatility_weights
-from ep_model.review.rating_estimate import MAX_SWING, estimate_rating, phase_grade, phase_of
+from ep_model.review.rating_estimate import MAX_SWING, game_ratings, phase_grade, phase_of
 from ep_model.review.ratings import detect_pool, from_lichess_scale, to_lichess_scale
 from ep_model.review.special import (
     is_brilliant,
     is_great,
     is_miss,
+    sacrifice_holds,
     sacrifice_points,
     sacrificed_piece,
     takes_hanging_material,
-    thresholds_for,
 )
 from ep_model.review.tactics import tactic_hint
 
@@ -237,7 +237,8 @@ def review_game(
         best = chess.Move.from_uci(ev["best_uci"]) if ev.get("best_uci") else None
         pos["best_uci"] = best.uci() if best else None
         pos["best_san"] = b.san(best) if best else None
-        pos["best_line_san"] = _san_line(pos["fen"], ev.get("pv_uci") or [])
+        pos["pv_uci"] = list(ev.get("pv_uci") or [])
+        pos["best_line_san"] = _san_line(pos["fen"], pos["pv_uci"])
         second = chess.Move.from_uci(ev["second_uci"]) if ev.get("second_uci") else None
         pos["second_uci"] = second.uci() if second else None
         pos["second_san"] = b.san(second) if second else None
@@ -325,11 +326,10 @@ def review_game(
             special = None
             sac, sac_piece = 0, None
             if not is_book:
-                # Brilliant: alternative = the second line if this was the best move, else the best move.
-                alt = ep_second if is_best else ep_best
-                if ep_loss <= thresholds_for(mover_elo).brilliant_max_loss:
+                # Brilliant: only the engine's own move, and only a sacrifice its main line accepts and keeps.
+                if is_best:
                     sac = sacrifice_points(board_before, mv)
-                if is_brilliant(ep_loss, ep_after, alt, mover_elo, sac):
+                if is_brilliant(is_best, ep_after, ep_second, sac, sac > 0 and sacrifice_holds(board_before, before["pv_uci"])):
                     special = "brilliant"
                     sac_piece = sacrificed_piece(board_before, mv)
                 elif is_great(
@@ -402,29 +402,29 @@ def review_game(
         m["weight"] = w
 
     summary: dict[str, Any] = {}
+    per_side = {side: [m for m in moves if m["mover"] == side] for side in ("white", "black")}
+    accuracy = {
+        side: combine([m["accuracy"] for m in mine], [m["weight"] for m in mine]) if mine else 100.0
+        for side, mine in per_side.items()
+    }
+    # Game rating follows the accuracy shown: both sides anchored on the game's average rating.
+    estimates = game_ratings(accuracy, {"white": w_elo, "black": b_elo}, {s: len(m) for s, m in per_side.items()}, time_class)
+    anchor_shown = (w_elo_raw + b_elo_raw) / 2.0
     for side in ("white", "black"):
-        mine = [m for m in moves if m["mover"] == side]
+        mine = per_side[side]
         counts: dict[str, int] = {}
         for m in mine:
             counts[m["ep_label"]] = counts.get(m["ep_label"], 0) + 1
-        # Rating-free raw win% drop on every move after the first, as in the fitting data.
-        later = [m for m in mine if m["ply"] > 1]
-        est = estimate_rating(
-            [max(0.0, m["lichess_best"] - m["lichess_after"]) for m in later],
-            [abs(m["cp_before"]) for m in later],
-            time_class,
-            w_elo if side == "white" else b_elo,
-        )
-        if est is not None and pool != "lichess":
-            # "Played like" is shown rounded to 100; the unused range stays rounded to 10.
-            est = {k: from_lichess_scale(v, pool, time_class, -2 if k == "plays_like" else -1) for k, v in est.items()}
-            # Keep the ±400 single-game bound on the scale the player sees.
-            own = w_elo_raw if side == "white" else b_elo_raw
-            est["plays_like"] = int(round(max(own - int(MAX_SWING), min(own + int(MAX_SWING), est["plays_like"])), -2))
+        est = estimates[side]
+        if est is not None:
+            # Shown on the player's own scale, within ±400 of the game's average there, rounded to 100.
+            shown = from_lichess_scale(est["plays_like"], pool, time_class, 0) if pool != "lichess" else est["plays_like"]
+            shown = max(anchor_shown - MAX_SWING, min(anchor_shown + MAX_SWING, shown))
+            est = {"plays_like": int(round(shown, -2))}
         summary[side] = {
             "moves": len(mine),
             "avg_ep_loss": sum(m["ep_loss"] for m in mine) / len(mine) if mine else 0.0,
-            "accuracy": combine([m["accuracy"] for m in mine], [m["weight"] for m in mine]) if mine else 100.0,
+            "accuracy": accuracy[side],
             "labels": counts,
             "estimated_rating": est,
             "phases": {ph: phase_grade([m for m in mine if m["phase"] == ph]) for ph in ("opening", "middlegame", "endgame")},

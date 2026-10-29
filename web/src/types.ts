@@ -72,7 +72,7 @@ export interface SideSummary {
   accuracy: number
   labels: Partial<Record<Label, number>>
   // Game (performance) rating, in the game's own rating pool: your rating moved by how you played.
-  estimated_rating: { rating: number; low: number; high: number; plays_like: number } | null
+  estimated_rating: { plays_like: number } | null
   phases: Record<Phase, PhaseGrade | null>
 }
 

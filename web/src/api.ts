@@ -3,7 +3,8 @@
 import { createEnginePool, type EnginePool } from './engine/pool'
 import { fetchGamesDirect } from './importers'
 import { loadBook, type Book } from './review/book'
-import { fetchTreeModel, loadTreeModel } from './review/lgbm'
+import { fetchTreeModel } from './review/lgbm'
+import type { RatingMeta } from './review/rating'
 import { reviewGame, scoreAttempt, type Models, type ReviewResult } from './review/review'
 import type { GameListItem, RetryResult, Review } from './types'
 
@@ -33,7 +34,7 @@ function models(): Promise<Models> {
     fetchTreeModel(`${base}data/models/chances.json`),
     fetch(`${base}data/models/rating.json`)
       .then((r) => r.json())
-      .then((json) => Object.assign(loadTreeModel(json), { inverse: json.inverse, posterior_sd: json.posterior_sd })),
+      .then((json) => ({ curves: json.curves, offset: json.offset, spread: json.spread }) as RatingMeta),
     fetchBook(),
   ]).then(([board, chances, rating, book]) => ({ board, chances, rating, book }))
   modelsPromise.catch(() => (modelsPromise = null))

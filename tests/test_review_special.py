@@ -8,6 +8,7 @@ from ep_model.review.special import (
     is_great,
     is_miss,
     material_given,
+    sacrifice_holds,
     outcome_band,
     sacrifice_points,
     sacrificed_piece,
@@ -19,9 +20,7 @@ from ep_model.review.special import (
 def test_thresholds_scale_with_rating():
     lo, hi = thresholds_for(800), thresholds_for(2600)
     assert lo.great_gap == pytest.approx(0.10) and hi.great_gap == pytest.approx(0.15)
-    assert lo.brilliant_max_loss == pytest.approx(0.03) and hi.brilliant_max_loss == pytest.approx(0.01)
-    mid = thresholds_for(1600)
-    assert 0.10 < mid.great_gap < 0.15 and 0.01 < mid.brilliant_max_loss < 0.03
+    assert 0.10 < thresholds_for(1600).great_gap < 0.15
 
 
 def test_outcome_bands():
@@ -95,14 +94,40 @@ def test_miss():
 
 
 def test_brilliant():
-    assert is_brilliant(ep_loss=0.0, ep_after=0.62, ep_second=0.55, elo=1500, sac_points=3)
-    assert not is_brilliant(0.0, 0.62, 0.55, 1500, sac_points=0)  # no sacrifice
-    assert not is_brilliant(0.0, 0.40, 0.30, 1500, 3)  # still worse after
-    assert not is_brilliant(0.0, 0.97, 0.95, 1500, 3)  # already completely winning without it
-    assert not is_brilliant(0.05, 0.62, 0.55, 1500, 3)  # not near-best
-    # 0.025 loss: forgiven at 1000, not at 2200.
-    assert is_brilliant(0.025, 0.6, 0.5, 1000, 3)
-    assert not is_brilliant(0.025, 0.6, 0.5, 2200, 3)
+    assert is_brilliant(True, ep_after=0.62, ep_second=0.55, sac_points=3, holds=True)
+    assert not is_brilliant(True, 0.62, 0.55, sac_points=0, holds=True)  # no sacrifice
+    assert not is_brilliant(False, 0.62, 0.55, 3, True)  # not the engine's move
+    assert not is_brilliant(True, 0.62, 0.55, 3, holds=False)  # a quick tactic or a declined offer
+    assert not is_brilliant(True, 0.40, 0.30, 3, True)  # still worse after
+    assert not is_brilliant(True, 0.97, 0.95, 3, True)  # already completely winning without it
+
+
+def _after(moves: str) -> chess.Board:
+    b = chess.Board()
+    for san in moves.split():
+        b.push_san(san)
+    return b
+
+
+def test_sacrifice_holds_for_a_real_sacrifice():
+    # Greek gift: Bxh7+ Kxh7 Ng5+ Kg8 Qh5, the bishop stays given up.
+    b = chess.Board("r1bq1rk1/pppn1ppp/4p3/3pP3/3P4/2PB1N2/PP3PPP/R1BQK2R w KQ - 0 9")
+    assert sacrifice_holds(b, ["d3h7", "g8h7", "f3g5", "h7g8", "d1h5"])
+
+
+def test_sacrifice_holds_for_a_mating_line():
+    # Morphy's Opera Game, 16. Qb8+ Nxb8 17. Rd8#.
+    b = _after("e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 "
+               "O-O-O Rd8 Rxd7 Rxd7 Rd1 Qe6 Bxd7+ Nxd7")
+    assert sacrifice_holds(b, ["b3b8", "d7b8", "d1d8"])
+
+
+def test_quick_tactics_and_declined_offers_are_not_sacrifices():
+    # Fork trick: Nxe4 Nxe4 d5 wins the piece straight back.
+    b = _after("e4 e5 Nf3 Nc6 Bc4 Nf6 Nc3")
+    assert not sacrifice_holds(b, ["f6e4", "c3e4", "d7d5", "c4d3", "d5e4", "d3e4"])
+    # Nothing is ever taken in the main line.
+    assert not sacrifice_holds(chess.Board(), ["e2e4", "e7e5", "g1f3", "b8c6"])
 
 
 def test_taking_a_hanging_piece_is_not_great():

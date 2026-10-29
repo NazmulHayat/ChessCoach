@@ -1,5 +1,5 @@
 [project]
-name = "chesscoach"
+name = "elo101"
 version = "1.0.0"
 description = "Chess game review driven by an expected-points model trained on the Lichess database."
 readme = "README.md"

@@ -1,21 +1,43 @@
-"""Game rating features, phase detection and phase grades (no engine, no model)."""
+"""Game rating, phase detection and phase grades (no engine, no model)."""
 
 import chess
 import pytest
 
-from ep_model.review.rating_estimate import features, move_accuracy, phase_grade, phase_of, win_prob
+from ep_model.review.rating_estimate import MAX_SWING, game_ratings, phase_grade, phase_of, plays_like, win_prob
 from ep_model.review.ratings import from_lichess_scale, to_lichess_scale
 
 
-def test_features():
-    f = features([0.0, 0.0, 0.25, 0.15], [20, 2000, 500, 100], "rapid")
-    acc, blunders, mistakes, inacc, precise, log_n, mean_cp, bal_acc, bal_share, tc = f
-    assert acc == pytest.approx((100 + 100 + move_accuracy(0.25) + move_accuracy(0.15)) / 4)
-    assert (blunders, mistakes, inacc, precise) == (0.25, 0.25, 0.0, 0.5)
-    assert log_n == pytest.approx(1.3862943611)
-    assert mean_cp == pytest.approx((20 + 1000 + 500 + 100) / 4)  # |eval| clipped at 1000
-    assert bal_acc == pytest.approx((100 + move_accuracy(0.15)) / 2) and bal_share == 0.5
-    assert tc == 2.0
+META = {"curves": {"blitz": {"accuracy": [60.0, 70.0, 80.0, 90.0], "rating": [800.0, 1200.0, 1600.0, 2000.0]}}, "offset": {"blitz": 2.0}, "spread": {"blitz": 600.0}}
+MOVES = {"white": 30, "black": 30}
+
+
+def test_plays_like_inverts_the_accuracy_curve():
+    assert plays_like(82.0, "blitz", META) == pytest.approx(1600.0)  # 82 on our scale = 80 on Lichess's
+    # Past the ends the curve continues along its edge slope (40 rating points per accuracy point here).
+    assert plays_like(52.0, "blitz", META) == pytest.approx(400.0) and plays_like(102.0, "blitz", META) == pytest.approx(2400.0)
+    assert plays_like(77.0, "rapid", META) == plays_like(77.0, "blitz", META)  # unknown class falls back to blitz
+
+
+def test_more_accurate_player_never_gets_the_lower_game_rating():
+    # Very different ratings: still ordered by accuracy, since both are anchored on the game average.
+    est = game_ratings({"white": 75.0, "black": 74.0}, {"white": 800.0, "black": 2400.0}, MOVES, "blitz", META)
+    assert est["white"]["plays_like"] > est["black"]["plays_like"]
+    prev = -1.0
+    for acc in range(40, 101, 5):
+        r = game_ratings({"white": float(acc), "black": 70.0}, {"white": 1500.0, "black": 1500.0}, MOVES, "blitz", META)
+        assert r["white"]["plays_like"] > prev
+        prev = r["white"]["plays_like"]
+
+
+def test_game_rating_stays_within_400_of_the_game_average():
+    est = game_ratings({"white": 100.0, "black": 0.0}, {"white": 1500.0, "black": 1500.0}, MOVES, "blitz", META)
+    assert 1500.0 < est["white"]["plays_like"] < 1500.0 + MAX_SWING
+    assert 1500.0 - MAX_SWING < est["black"]["plays_like"] < 1500.0
+
+
+def test_game_rating_needs_ten_moves():
+    est = game_ratings({"white": 90.0, "black": 90.0}, {"white": 1500.0, "black": 1500.0}, {"white": 9, "black": 10}, "blitz", META)
+    assert est["white"] is None and est["black"] is not None
 
 
 def test_win_prob_is_clipped_and_symmetric():
@@ -62,13 +84,3 @@ def test_lichess_accuracy_aggregation():
     # A quiet, equal game is near 100 for both sides.
     acc = lichess_game_accuracy([15.0] + [20.0, 10.0] * 15)
     assert acc["white"] > 98 and acc["black"] > 98
-
-
-def test_played_like_is_capped_at_fide_single_game_bound():
-    from ep_model.review.rating_estimate import MAX_SWING, estimate_rating
-
-    # A flawless bullet game would invert to the top of the table; shown value stays within ±400.
-    est = estimate_rating([0.0] * 40, [50.0] * 40, "bullet", 1500)
-    assert est is not None and est["plays_like"] <= 1500 + MAX_SWING
-    est = estimate_rating([0.3] * 40, [50.0] * 40, "bullet", 1500)
-    assert est is not None and est["plays_like"] >= 1500 - MAX_SWING

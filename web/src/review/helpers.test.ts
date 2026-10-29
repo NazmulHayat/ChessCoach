@@ -4,8 +4,7 @@ import { Chess, type Square } from 'chess.js'
 import { describe, expect, it } from 'vitest'
 import { combine, epMoveWeights, lichessGameAccuracy, moveAccuracyPct, volatilityWeights, winPercent } from './accuracy'
 import { loadBook } from './book'
-import { loadTreeModel, type TreeModelJson } from './lgbm'
-import { estimateRating, features, interp, moveAccuracy, phaseGrade, phaseOf, winProb, type RatingMeta } from './rating'
+import { gameRatings, moveAccuracy, phaseGrade, phaseOf, playsLike, winProb, type RatingMeta } from './rating'
 import { detectPool, fromLichessScale, toLichessScale } from './ratings'
 import {
   classifyTimeClass,
@@ -20,6 +19,7 @@ import {
   captureValue,
   findFastMove,
   isBrilliant,
+  sacrificeHolds,
   isGreat,
   isMiss,
   materialGiven,
@@ -71,10 +71,8 @@ describe('special', () => {
     for (const [a, want] of r.great) expect(isGreat(a[0], a[1], a[2], a[3], a[4], a[5], a[6])).toBe(want)
     for (const [a, want] of r.miss) expect(isMiss(a[0], a[1], a[2], a[3], a[4])).toBe(want)
     for (const [a, want] of r.brilliant) expect(isBrilliant(a[0], a[1], a[2], a[3], a[4])).toBe(want)
-    for (const [elo, g, b] of r.thresholds) {
-      close(thresholdsFor(elo).great_gap, g)
-      close(thresholdsFor(elo).brilliant_max_loss, b)
-    }
+    for (const [elo, g] of r.thresholds) close(thresholdsFor(elo).great_gap, g)
+    for (const [fen, line, want] of r.holds) expect([fen, line, sacrificeHolds(new Chess(fen), line)]).toEqual([fen, line, want])
     for (const [x, want] of r.bands) expect(outcomeBand(x)).toBe(want)
   })
 })
@@ -141,25 +139,19 @@ describe('accuracy', () => {
 
 describe('rating estimate and phases', () => {
   const r = fixture('rating')
-  const json = JSON.parse(readFileSync(new URL('../../public/data/models/rating.json', import.meta.url), 'utf-8'))
-  const model = loadTreeModel(json as TreeModelJson)
-  const meta = json as RatingMeta
-  it('features and curves', () => {
+  const meta = JSON.parse(readFileSync(new URL('../../public/data/models/rating.json', import.meta.url), 'utf-8')) as RatingMeta
+  it('curves', () => {
     for (const [c, want] of r.win_prob) close(winProb(c), want)
     for (const [x, want] of r.move_accuracy) close(moveAccuracy(x), want)
-    for (const f of r.features) features(f.losses, f.abs_cp, f.time_class).forEach((v, i) => close(v, f.features[i]))
-    for (const [tc, x, want] of r.interp) {
-      const t = meta.inverse[tc]
-      close(interp(x, t.score, t.rating), want)
-    }
+    for (const [tc, acc, want] of r.plays_like) close(playsLike(acc, tc, meta), want)
   })
-  it('estimate (with the rating tree model)', () => {
+  it('game ratings', () => {
     for (const e of r.estimates) {
-      expect([e.losses.length, e.time_class, estimateRating(model, meta, e.losses, e.abs_cp, e.time_class, e.rating)]).toEqual([
-        e.losses.length,
-        e.time_class,
-        e.result,
-      ])
+      const got = gameRatings(meta, e.accuracy, e.ratings, e.moves, e.time_class)
+      for (const side of ['white', 'black'] as const) {
+        if (e.result[side] === null) expect(got[side]).toBeNull()
+        else close(got[side]!.plays_like, e.result[side].plays_like)
+      }
     }
   })
   it('phase of and phase grade', () => {

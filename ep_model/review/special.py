@@ -7,12 +7,15 @@ Chess.com describes these labels only in words; these rules follow that wording 
   best move keeps a better outcome band (losing / equal / winning) than the second-best one.
 - Miss: the opponent just made a mistake or blunder and this move gives back most of what they gave away,
   without dropping below where the mover stood before the gift (that would be a plain mistake/blunder).
-- Brilliant: a best or near-best move that gives up material (static exchange) when a safer move existed,
-  leaves the mover at least equal, and wasn't needed because the position was already completely winning.
+- Brilliant: the engine's best move, giving up material (static exchange) when a safer move existed, that
+  the engine's main line actually accepts and keeps: the opponent takes it and the mover doesn't simply
+  win it back within the next three half-moves (unless the line mates). Not when already completely
+  winning without it, and the mover must stay at least about equal. A sacrifice that is just a quick
+  tactic (Nxe4 and a fork regains the piece) or a piece left hanging that the opponent shouldn't take
+  is a Best or Great move, not a Brilliant one.
 
-Rating-dependent thresholds: the EP curve is steeper at higher ratings (the same engine gap costs more
-points), so the Great gap grows with rating; the Brilliant tolerance shrinks with rating, like Chess.com
-being more generous with Brilliant at lower levels.
+Rating-dependent threshold: the EP curve is steeper at higher ratings (the same engine gap costs more
+points), so the Great gap grows with rating.
 """
 
 from __future__ import annotations
@@ -31,6 +34,10 @@ WINNING_ABOVE = 0.70
 GREAT_BAND_MIN_GAP = 0.05
 # Brilliant: points of material given up, after the move and the opponent's best capture sequence.
 SAC_MIN_POINTS = 2
+# Brilliant: the main line must take the material within this many plies after the move, and the mover must
+# stay down at least SAC_MIN_POINTS for SAC_HOLD_PLIES plies after that.
+SAC_TAKEN_WITHIN = 5
+SAC_HOLD_PLIES = 3
 BRILLIANT_MIN_EP_AFTER = 0.45  # not worse than about equal after the sacrifice
 BRILLIANT_WINNING_CAP = 0.90  # if the second-best move already keeps this much, the sac wasn't needed
 # Miss: the opponent's gift must be at least mistake-sized, and this move must give back this share of it.
@@ -43,7 +50,6 @@ MISS_FLOOR_MARGIN = 0.05
 @dataclass(frozen=True)
 class Thresholds:
     great_gap: float
-    brilliant_max_loss: float
 
 
 def _lerp_by_elo(elo: float, lo: float, hi: float, elo_lo: float = 1000.0, elo_hi: float = 2200.0) -> float:
@@ -52,8 +58,8 @@ def _lerp_by_elo(elo: float, lo: float, hi: float, elo_lo: float = 1000.0, elo_h
 
 
 def thresholds_for(elo: float) -> Thresholds:
-    """Great gap 0.10 → 0.15 and Brilliant tolerance 0.03 → 0.01, linear from 1000 to 2200 (Lichess scale)."""
-    return Thresholds(great_gap=_lerp_by_elo(elo, 0.10, 0.15), brilliant_max_loss=_lerp_by_elo(elo, 0.03, 0.01))
+    """Great gap 0.10 → 0.15, linear from 1000 to 2200 (Lichess scale)."""
+    return Thresholds(great_gap=_lerp_by_elo(elo, 0.10, 0.15))
 
 
 def outcome_band(ep: float) -> int:
@@ -201,8 +207,37 @@ def is_miss(
     return ep_after >= mover_ep_before_gift - MISS_FLOOR_MARGIN
 
 
-def is_brilliant(ep_loss: float, ep_after: float, ep_second: float | None, elo: float, sac_points: int) -> bool:
-    if sac_points < SAC_MIN_POINTS or ep_loss > thresholds_for(elo).brilliant_max_loss:
+def material_balance(board: chess.Board, color: chess.Color) -> int:
+    """Material of `color` minus the opponent's, in points."""
+    return sum(PIECE_VALUES[p.piece_type] * (1 if p.color == color else -1) for p in board.piece_map().values())
+
+
+def sacrifice_holds(board: chess.Board, pv_uci: list[str]) -> bool:
+    """
+    Along the engine's main line from `board` (starting with the move played), does the opponent take the
+    material and the mover stay at least SAC_MIN_POINTS down for SAC_HOLD_PLIES plies? A line ending in
+    mate counts. Never taken (a hanging piece the opponent shouldn't touch) or won straight back (a quick
+    tactic) doesn't.
+    """
+    b = board.copy(stack=False)
+    me, start = b.turn, material_balance(b, b.turn)
+    net: list[int] = []
+    mates = False
+    for uci in pv_uci:
+        try:
+            b.push_uci(uci)
+        except ValueError:
+            break
+        net.append(material_balance(b, me) - start)
+        mates = mates or b.is_checkmate()
+    for k in range(1, min(len(net), SAC_TAKEN_WITHIN + 1)):
+        if net[k] <= -SAC_MIN_POINTS:
+            return mates or all(x <= -SAC_MIN_POINTS for x in net[k + 1 : k + 1 + SAC_HOLD_PLIES])
+    return False
+
+
+def is_brilliant(is_best: bool, ep_after: float, ep_second: float | None, sac_points: int, holds: bool) -> bool:
+    if not is_best or sac_points < SAC_MIN_POINTS or not holds:
         return False
     if ep_after < BRILLIANT_MIN_EP_AFTER:
         return False

@@ -27,12 +27,11 @@ interface Fixture {
 }
 
 const fixtures = readJson<Fixture[]>('./__fixtures__/reviews.json')
-const ratingJson = readJson<TreeModelJson & RatingMeta>('../../public/data/models/rating.json')
 const bin = fs.readFileSync(new URL('../../public/data/book.bin', import.meta.url)) as { buffer: ArrayBuffer; byteOffset: number; byteLength: number }
 const models: Models = {
   board: loadTreeModel(readJson<TreeModelJson>('../../public/data/models/board.json')),
   chances: loadTreeModel(readJson<TreeModelJson>('../../public/data/models/chances.json')),
-  rating: Object.assign(loadTreeModel(ratingJson), { inverse: ratingJson.inverse, posterior_sd: ratingJson.posterior_sd }),
+  rating: readJson<RatingMeta>('../../public/data/models/rating.json'),
   book: loadBook(bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength), readJson<string[]>('../../public/data/polyglot.json')),
 }
 

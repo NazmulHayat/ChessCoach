@@ -52,10 +52,10 @@ Share of decisive games where the player with the higher value won (0.5 = coin f
 | lichess | blitz | Lichess's accuracy | 0.947 | 0.947 | 0.947 | 0.947 |
 | lichess | rapid | Lichess's accuracy | 0.996 | 0.996 | 0.996 | 0.996 |
 | lichess | all | Lichess's accuracy | 0.959 | 0.959 | 0.959 | 0.959 |
-| lichess | bullet | played-like rating | 0.911 | 0.911 | 0.911 | 0.911 |
-| lichess | blitz | played-like rating | 0.921 | 0.921 | 0.921 | 0.921 |
+| lichess | bullet | played-like rating | 0.938 | 0.938 | 0.938 | 0.938 |
+| lichess | blitz | played-like rating | 0.942 | 0.942 | 0.942 | 0.942 |
 | lichess | rapid | played-like rating | 0.997 | 0.997 | 0.997 | 0.997 |
-| lichess | all | played-like rating | 0.945 | 0.945 | 0.945 | 0.945 |
+| lichess | all | played-like rating | 0.956 | 0.956 | 0.956 | 0.956 |
 | chesscom | bullet | our accuracy | 0.927 | 0.927 | 0.927 | 0.927 |
 | chesscom | blitz | our accuracy | 0.988 | 0.988 | 0.988 | 0.988 |
 | chesscom | rapid | our accuracy | 0.966 | 0.966 | 0.966 | 0.966 |
@@ -68,10 +68,10 @@ Share of decisive games where the player with the higher value won (0.5 = coin f
 | chesscom | blitz | Chess.com's accuracy | 0.982 | 0.982 | 0.982 | 0.982 |
 | chesscom | rapid | Chess.com's accuracy | 0.985 | 0.985 | 0.985 | 0.985 |
 | chesscom | all | Chess.com's accuracy | 0.968 | 0.968 | 0.968 | 0.968 |
-| chesscom | bullet | played-like rating | 0.882 | 0.882 | 0.882 | 0.882 |
-| chesscom | blitz | played-like rating | 0.967 | 0.967 | 0.967 | 0.967 |
-| chesscom | rapid | played-like rating | 0.935 | 0.935 | 0.935 | 0.935 |
-| chesscom | all | played-like rating | 0.936 | 0.936 | 0.936 | 0.936 |
+| chesscom | bullet | played-like rating | 0.892 | 0.892 | 0.892 | 0.892 |
+| chesscom | blitz | played-like rating | 0.979 | 0.979 | 0.979 | 0.979 |
+| chesscom | rapid | played-like rating | 0.965 | 0.965 | 0.965 | 0.965 |
+| chesscom | all | played-like rating | 0.946 | 0.946 | 0.946 | 0.946 |
 
 ## Details
 

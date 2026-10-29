@@ -4,7 +4,7 @@
   Source: https://github.com/rsms/inter; license: https://github.com/rsms/inter/blob/master/LICENSE.txt.
   Loaded through Google Fonts with `display=swap`; system fonts are used if offline or blocked.
   No font binary is redistributed in this repository. OFL permits bundling with GPL software.
-- **Coach knight icon** — original SVG created for ChessCoach, distributed under the project's license.
+- **Coach knight icon** — original SVG created for elo101, distributed under the project's license.
 - **Chess pieces** — the existing react-chessboard built-in pieces remain in use.
   No new third-party piece asset is included. Cburnett (Colin M. L. Burnett) and Merida
   (Armando Hernandez Marroquin) were checked as GPLv2-or-later in
