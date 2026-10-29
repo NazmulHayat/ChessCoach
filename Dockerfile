@@ -33,7 +33,7 @@ COPY --from=stockfish /sf/src/stockfish /usr/local/bin/stockfish
 COPY ep_model/ ep_model/
 COPY --from=web /web/dist web/dist
 
-# Tunables (see ep_model/phase_d/server.py): engine depth and processes, request limits.
+# Tunables (see ep_model/review/server.py): engine depth and processes, request limits.
 ENV CHESSCOACH_DEPTH=17 \
     CHESSCOACH_WORKERS=2 \
     CHESSCOACH_MAX_CONCURRENT=2 \
@@ -44,4 +44,4 @@ ENV CHESSCOACH_DEPTH=17 \
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/api/health', timeout=4)"
-CMD ["sh", "-c", "python -m ep_model.phase_d.server --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "python -m ep_model.review.server --host 0.0.0.0 --port ${PORT}"]

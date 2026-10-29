@@ -122,7 +122,7 @@ def build_phase_b_command(
     mod = [
         sys.executable,
         "-m",
-        "ep_model.phase_b.augment_evals",
+        "ep_model.labeling.augment_evals",
         "--input-dir",
         str(repo_root / "ep_model" / "processed"),
         "--out-dir",

@@ -24,7 +24,7 @@ class's median rating.
 
 Usage (repo root):
   python -m ep_model.scripts.fit_rating_estimate --games 200000
-  → ep_model/phase_d/data/rating_lgbm.txt + rating_estimate.json
+  → ep_model/review/data/rating_lgbm.txt + rating_estimate.json
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ import numpy as np
 import zstandard
 
 from ep_model.harvest.lichess_evals import EVAL_RE, GAME_SEP, HEADER_RE, MOVE_RE, parse_eval
-from ep_model.phase_a.rowgen import classify_time_class, parse_result_header, parse_time_control
-from ep_model.phase_d.rating_estimate import FEATURE_NAMES, META_FILE, MIN_MOVES, MODEL_FILE, TIME_CLASSES, features, win_prob
+from ep_model.sampling.rowgen import classify_time_class, parse_result_header, parse_time_control
+from ep_model.review.rating_estimate import FEATURE_NAMES, META_FILE, MIN_MOVES, MODEL_FILE, TIME_CLASSES, features, win_prob
 
 LOG = logging.getLogger(__name__)
 REPO = Path(__file__).resolve().parents[2]

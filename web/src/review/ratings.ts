@@ -1,4 +1,4 @@
-// Rating pools: port of ep_model/phase_d/ratings.py (Chess.com ratings mapped onto the Lichess scale).
+// Rating pools: port of ep_model/review/ratings.py (Chess.com ratings mapped onto the Lichess scale).
 
 const CHESSCOM_TO_LICHESS: Record<string, [number, number]> = {
   bullet: [0.75, 560],

@@ -27,7 +27,7 @@ The harvested set is huge and free, but it differs from the clean set in two way
 
 **More pretraining data.** Pretraining on 25M harvested rows instead of 12M (then the same fine-tune) reached 0.5743 vs 0.5746 log loss on the test set: a paired difference of −0.0002 (95% CI −0.0011 to +0.0007). Not significant, so the 12M model stays.
 
-**Neural network (PyTorch).** `python -m ep_model.phase_c.train_nn` trains an MLP on the same 17 features, the same clock dropout and the same clean training games, with the test games excluded (embeddings for phase / time class / rating band / ECO, standardised numerics with missing-clock flags, 3 × 128 ReLU layers, binary cross-entropy on the soft result, early-stopped on 10% of training games; 42k parameters, about 10 s per run on a laptop CPU). `phase_c.evaluate --extra-nn` scores it on the same held-out rows. Over three seeds it reached 0.5745 / 0.5760 / 0.5766 log loss:
+**Neural network (PyTorch).** `python -m ep_model.training.train_nn` trains an MLP on the same 17 features, the same clock dropout and the same clean training games, with the test games excluded (embeddings for phase / time class / rating band / ECO, standardised numerics with missing-clock flags, 3 × 128 ReLU layers, binary cross-entropy on the soft result, early-stopped on 10% of training games; 42k parameters, about 10 s per run on a laptop CPU). `training.evaluate --extra-nn` scores it on the same held-out rows. Over three seeds it reached 0.5745 / 0.5760 / 0.5766 log loss:
 
 - **vs LightGBM on the same clean data** (0.5788): better in all three seeds, −0.0043 / −0.0028 / −0.0023, significant in two of three (95% CIs −0.0068 to −0.0021, −0.0054 to −0.0003, −0.0047 to +0.0001).
 - **vs the shipped pretrained + fine-tuned LightGBM** (0.5746): no significant difference in any seed (best −0.0001, 95% CI −0.0026 to +0.0023). The network matches what LightGBM needed 12M extra harvested positions to reach.
@@ -47,7 +47,7 @@ Not shipped: it does not beat the current model, and the browser app evaluates L
 
 ## Evaluation
 
-`python -m ep_model.phase_c.evaluate` scores the held-out games with the EP model and four baselines:
+`python -m ep_model.training.evaluate` scores the held-out games with the EP model and four baselines:
 
 1. **Constant**: mean training outcome.
 2. **Lichess win% formula**: `1 / (1 + exp(-0.00368208 · cp))`, cp clipped to ±1000.
@@ -81,7 +81,7 @@ Labels then use Chess.com's published bands: best (engine move), excellent < 0.0
 
 ### Great, Miss and Brilliant
 
-Chess.com describes these only in words, so these are our own rules, written in expected points. The engine runs with `multipv=2`, so the second-best move and its eval are known; its EP is scored with the same counterfactual row as the best move. Code: `ep_model/phase_d/special.py`, tests: `tests/test_phase_d_special.py`.
+Chess.com describes these only in words, so these are our own rules, written in expected points. The engine runs with `multipv=2`, so the second-best move and its eval are known; its EP is scored with the same counterfactual row as the best move. Code: `ep_model/review/special.py`, tests: `tests/test_review_special.py`.
 
 | Label | Rule (mover's EP) |
 |---|---|
@@ -101,7 +101,7 @@ Priority: book > brilliant > great > miss > the EP band label. The band label is
 
 ### Coach text
 
-The coach is template text filled from the review. For moves that lost something, a tactic hint is added when one of these checks fires (in this order, `ep_model/phase_d/tactics.py`): **missed mate** (the mover had mate and the move doesn't keep a mate), **allows mate** (the opponent has mate after the move), **hangs a piece** (static exchange after the move wins the opponent at least a pawn net of what the move captured), **missed material** (the best move is a capture that keeps ≥ 2 points after the best recapture). The best move's main line (first 6 plies of the principal variation) is shown under it.
+The coach is template text filled from the review. For moves that lost something, a tactic hint is added when one of these checks fires (in this order, `ep_model/review/tactics.py`): **missed mate** (the mover had mate and the move doesn't keep a mate), **allows mate** (the opponent has mate after the move), **hangs a piece** (static exchange after the move wins the opponent at least a pawn net of what the move captured), **missed material** (the best move is a capture that keeps ≥ 2 points after the best recapture). The best move's main line (first 6 plies of the principal variation) is shown under it.
 
 **AI notes (optional).** With `ANTHROPIC_API_KEY` set on the server, an *Explain* button sends Claude (`claude-opus-5-5`, low effort) the facts the review already computed (FEN, move, label, chances, best line, tactic hint) and asks for 2-3 plain sentences that use only those facts. Notes are cached per move and capped at 30 per game; failures (bad key, rate limit, refusal) show a short message in the coach bubble. Without a key the button doesn't appear.
 
@@ -111,7 +111,7 @@ On a mistake, miss or blunder, the board takes a move for the side that erred (d
 
 ### Game rating (performance in this game)
 
-As Chess.com describes it: compare the quality of your moves with what players at your rating typically produce, and move your rating up or down by that. Code: `ep_model/scripts/fit_rating_estimate.py`, `ep_model/phase_d/rating_estimate.py`. Fitted on games from the dump that Lichess's servers had already analysed (an eval after every move, known ratings): 200,000 games, 397k player-games with ≥ 10 moves, 20% of games held out.
+As Chess.com describes it: compare the quality of your moves with what players at your rating typically produce, and move your rating up or down by that. Code: `ep_model/scripts/fit_rating_estimate.py`, `ep_model/review/rating_estimate.py`. Fitted on games from the dump that Lichess's servers had already analysed (an eval after every move, known ratings): 200,000 games, 397k player-games with ≥ 10 moves, 20% of games held out.
 
 1. **Quality score.** A small LightGBM model turns rating-free features of one player's moves into a score: mean accuracy, blunder / mistake / inaccuracy / precise-move (< 1%) rates, number of moves, mean |eval|, accuracy in roughly balanced positions (|eval| < 3 pawns) and the share of such moves, time class. Rating-free on purpose: the raw win% drop on the Lichess curve, not the EP model (which takes the rating as an input).
 2. **"Plays like."** The rating whose median quality score equals this game's score (inverse of the median-score-by-rating curve).
@@ -131,7 +131,7 @@ As Chess.com describes it: compare the quality of your moves with what players a
 
 ### Accuracy
 
-Lichess's published method (`ep_model/phase_d/accuracy.py`): per-move accuracy from the drop in winning chances on Lichess's curve (+1 uncertainty bonus), then the average of a volatility-weighted mean (moves in sharp, swinging positions count more; weights are the SD of win% over a sliding window, clamped to 0.5–12) and a harmonic mean (each move floored at 1). A plain average hides one blunder among good moves; this doesn't.
+Lichess's published method (`ep_model/review/accuracy.py`): per-move accuracy from the drop in winning chances on Lichess's curve (+1 uncertainty bonus), then the average of a volatility-weighted mean (moves in sharp, swinging positions count more; weights are the SD of win% over a sliding window, clamped to 0.5–12) and a harmonic mean (each move floored at 1). A plain average hides one blunder among good moves; this doesn't.
 
 **Checked against Lichess itself.** On 381 analysed games from Lichess's public API (762 player scores), our implementation fed with Lichess's own evals gives Lichess's displayed accuracy to within 0.32 points on average and within rounding (Lichess shows whole numbers) on 94%. Reconstructing it surfaced one detail: the harmonic mean floors each move at 1; with a ~0 floor the average difference was 0.57 and one game was off by 15 points.
 
@@ -197,7 +197,7 @@ The lite engine's evals differ from native Stockfish 18's: median 16 cp, 90th pe
 
 ## Rating pools
 
-The model learned Lichess ratings. Chess.com ratings run lower, most at the bottom of the range, so Chess.com games are mapped onto the Lichess scale with a simple linear fit per time class (`ep_model/phase_d/ratings.py`). This is an approximation; the summary screen shows the mapped values.
+The model learned Lichess ratings. Chess.com ratings run lower, most at the bottom of the range, so Chess.com games are mapped onto the Lichess scale with a simple linear fit per time class (`ep_model/review/ratings.py`). This is an approximation; the summary screen shows the mapped values.
 
 ## Known limits
 

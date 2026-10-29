@@ -3,20 +3,26 @@ chess>=1.11
 python-chess>=1.999
 stockfish>=4.0.8
 
-# EP model: .pgn.zst → Parquet → training (see ep_model/TRAINING_PLAN.md)
+# EP model: .pgn.zst → Parquet → training (see docs/training-pipeline.md)
 zstandard>=0.22.0
 pyarrow>=14.0.0
 pandas>=2.0.0
 lightgbm>=4.0.0
 psutil>=5.9.0
 
-# Phase D web app (ep_model.phase_d.server)
+# Phase D web app (ep_model.review.server)
 fastapi>=0.115
 uvicorn>=0.30
 httpx>=0.27
 
-# Optional: PyTorch comparison model (ep_model.phase_c.train_nn; not used by the app)
+# Optional: PyTorch comparison model (ep_model.training.train_nn; not used by the app)
 # torch>=2.4
+
+# README figures (ep_model.scripts.make_figures)
+matplotlib>=3.8
+
+# Tests
+pytest>=8.0
 
 # Optional: Claude-written explanations for key moments (only used when ANTHROPIC_API_KEY is set)
 anthropic>=2.0

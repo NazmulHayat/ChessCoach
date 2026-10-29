@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 
 from ep_model.benchmark.run import CachedEvals, game_fens, load_sets, puzzle_game, read_game
-from ep_model.phase_d.predictor import EPModel, board_model_dir, default_model_dir
-from ep_model.phase_d.review import review_game
+from ep_model.review.predictor import EPModel, board_model_dir, default_model_dir
+from ep_model.review.review import review_game
 
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "web" / "src" / "review" / "__fixtures__" / "reviews.json"

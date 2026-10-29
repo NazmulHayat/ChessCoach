@@ -19,10 +19,10 @@ from pathlib import Path
 
 import chess.pgn
 
-from ep_model.phase_a.generate_rows import stream_games
-from ep_model.phase_d.engine_pool import EnginePool
-from ep_model.phase_d.predictor import EPModel, board_model_dir
-from ep_model.phase_d.review import review_game
+from ep_model.sampling.generate_rows import stream_games
+from ep_model.review.engine_pool import EnginePool
+from ep_model.review.predictor import EPModel, board_model_dir
+from ep_model.review.review import review_game
 
 LOG = logging.getLogger(__name__)
 REPO = Path(__file__).resolve().parents[2]

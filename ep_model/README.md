@@ -4,7 +4,7 @@ Active training code for ChessCoach lives here. Legacy move-review and scripts a
 
 Minimal project structure for building an EP model from Lichess database exports.
 
-**Pipeline and training design:** see [TRAINING_PLAN.md](TRAINING_PLAN.md) (extraction → engine → LightGBM).
+**Pipeline and training design:** see [docs/training-pipeline.md](../docs/training-pipeline.md) (extraction → engine → LightGBM).
 
 ## Folder structure
 
@@ -14,24 +14,22 @@ Minimal project structure for building an EP model from Lichess database exports
 | `processed/` | Parquet shards, SQLite checkpoints, FEN eval cache. |
 | `config/`  | `engine_policy.json` (default Phase B) + `engine_policy_background.json` (cooler / background). |
 | `scripts/` | `safe_run` — batched Phase B with health checks, cooldowns, resume. |
-| `phase_a/` | Row generation without engine. |
-| `phase_b/` | Stockfish augmentation + FEN cache. |
-| `phase_c/` | Train LightGBM EP model (split by `game_id`); evaluate vs eval-only baselines. |
-| `phase_d/` | Inference (`EPModel`) + per-move PGN review with HTML report. |
+| `sampling/` | Row generation without engine. |
+| `labeling/` | Stockfish augmentation + FEN cache. |
+| `training/` | Train LightGBM EP model (split by `game_id`); evaluate vs eval-only baselines. |
+| `review/` | Inference (`EPModel`) + per-move PGN review with HTML report. |
 | `models/`  | Saved `ep_lgbm.txt` + `ep_train_manifest.json` (gitignored except `.gitkeep`). |
 
 ## Setup
 
 ```bash
 # From ChessCoach root
-cd /Users/nazmulhayat/Desktop/Programming/ChessCoach
+cd ChessCoach
 
-# Use one repo venv (from ChessCoach root)
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies (root requirements.txt includes EP stack)
 pip install -r requirements.txt
-# Or EP-only: pip install -r ep_model/requirements-ep.txt
 
 # Link your Lichess dump into raw/ (from ChessCoach root)
 ln -sf ../../lichess_db_standard_rated_2026-02.pgn.zst ep_model/raw/lichess_db_standard_rated_2026-02.pgn.zst
@@ -50,10 +48,10 @@ Default **`--plies-per-game` is 5** (balance of coverage vs row count).
 
 ```bash
 # Full run (example)
-python -m ep_model.phase_a.generate_rows --shard-rows 50000
+python -m ep_model.sampling.generate_rows --shard-rows 50000
 
 # Small pilot (adjust --max-games)
-python -m ep_model.phase_a.generate_rows --max-games 2000 --resume -v
+python -m ep_model.sampling.generate_rows --max-games 2000 --resume -v
 ```
 
 Useful flags:
@@ -74,10 +72,10 @@ Reads `processed/rows_no_eval_part*.parquet`, writes `processed/rows_with_eval_p
 
 ```bash
 # Pilot: first N rows (tune N). Logs include rough “1M positions ≈ X CPU-hours” extrapolation.
-python -m ep_model.phase_b.augment_evals --max-rows 3000 --flush-rows 1000 -v
+python -m ep_model.labeling.augment_evals --max-rows 3000 --flush-rows 1000 -v
 
 # Resume after sleep / crash
-python -m ep_model.phase_b.augment_evals --resume -v
+python -m ep_model.labeling.augment_evals --resume -v
 ```
 
 **Fresh Phase B run** (no `--resume`): checkpoint DB is cleared. Delete old `rows_with_eval_part*.parquet` if you do not want leftover shards mixed with a new run.
@@ -119,10 +117,10 @@ Requires `rows_with_eval_part*.parquet` from Phase B.
 - **Clock dropout:** `--clock-dropout` (default 0.15) blanks clocks for that fraction of games so the model has a clock-unknown mode for PGNs without `[%clk]`.
 
 ```bash
-python -m ep_model.phase_c.train -v
-python -m ep_model.phase_c.train --max-rows 20000 --val-fraction 0.15
+python -m ep_model.training.train -v
+python -m ep_model.training.train --max-rows 20000 --val-fraction 0.15
 # Large Phase B output: lower peak RAM (reads one Parquet shard at a time; --max-rows ignored)
-python -m ep_model.phase_c.train --sharded-load -v
+python -m ep_model.training.train --sharded-load -v
 ```
 
 **Outputs** (under `ep_model/models/`, local only — gitignored):
@@ -134,7 +132,7 @@ python -m ep_model.phase_c.train --sharded-load -v
 ### Evaluate vs baselines
 
 ```bash
-python -m ep_model.phase_c.evaluate -v
+python -m ep_model.training.evaluate -v
 ```
 
 Scores the held-out games with the EP model and four baselines: constant, the Lichess win% curve, a logistic fit on eval only, and LightGBM on eval only. Writes `models/ep_eval_report.md` / `.json` (overall, by rating band and time class, a fixed-eval slice across player groups, calibration).
@@ -151,10 +149,10 @@ About 1 in 9 games in a Lichess dump was analysed on Lichess and has `[%eval]` a
 ## Fine-tuning
 
 ```bash
-python -m ep_model.phase_c.train --processed-dir ep_model/processed_lichess --pattern "rows_lichess_part*.parquet" \
+python -m ep_model.training.train --processed-dir ep_model/processed_lichess --pattern "rows_lichess_part*.parquet" \
     --max-rows 12000000 --num-leaves 127 --output-dir ep_model/models_lichess
-python -m ep_model.phase_c.finetune --base-model ep_model/models_lichess --output-dir ep_model/models_finetuned
-python -m ep_model.phase_c.evaluate --extra-model ep_lichess=ep_model/models_lichess --extra-model ep_finetuned=ep_model/models_finetuned
+python -m ep_model.training.finetune --base-model ep_model/models_lichess --output-dir ep_model/models_finetuned
+python -m ep_model.training.evaluate --extra-model ep_lichess=ep_model/models_lichess --extra-model ep_finetuned=ep_model/models_finetuned
 ```
 
 `finetune` continues the pretrained trees on clean Phase B rows (test games from `models/ep_val_game_ids.txt` excluded; the rest split into fit / early-stopping). `--max-rows` reads shards in random order until the cap, with string columns as categoricals, so 12M rows fit on a 24 GB laptop. The app (`EPModel()`) loads `models_finetuned` when present, else `models` (`$CHESSCOACH_MODEL_DIR` overrides).
@@ -162,13 +160,13 @@ python -m ep_model.phase_c.evaluate --extra-model ep_lichess=ep_model/models_lic
 ## Phase D — EP move review
 
 ```bash
-python -m ep_model.phase_d.review game.pgn --html review.html
+python -m ep_model.review.review game.pgn --html review.html
 # PGN without Elo headers, faster engine pass:
-python -m ep_model.phase_d.review game.pgn --white-elo 1450 --black-elo 1500 --depth 14
+python -m ep_model.review.review game.pgn --white-elo 1450 --black-elo 1500 --depth 14
 ```
 
-Per move: **EP if best** (mover's expected score had they played Stockfish's best move), **EP after** the move played, **EP loss**, and a label using Chess.com's published bands (best = engine move, excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%; book moves from `phase_d/data/book.bin`). Both EPs are scored on an opponent-to-move row with the same context, so side-to-move bias in the model cancels. The same thresholds on the Lichess curve give an eval-only label for comparison. Training used depth 17; lower `--depth` is faster but slightly off-distribution. Chess.com ratings are mapped to the Lichess scale (`phase_d/ratings.py`, approximate; `--rating-pool` overrides detection). `--workers N` runs N engines in parallel.
+Per move: **EP if best** (mover's expected score had they played Stockfish's best move), **EP after** the move played, **EP loss**, and a label using Chess.com's published bands (best = engine move, excellent < 2%, good < 5%, inaccuracy < 10%, mistake < 20%, blunder ≥ 20%; book moves from `review/data/book.bin`). Both EPs are scored on an opponent-to-move row with the same context, so side-to-move bias in the model cancels. The same thresholds on the Lichess curve give an eval-only label for comparison. Training used depth 17; lower `--depth` is faster but slightly off-distribution. Chess.com ratings are mapped to the Lichess scale (`review/ratings.py`, approximate; `--rating-pool` overrides detection). `--workers N` runs N engines in parallel.
 
-Web app on top of this: `python -m ep_model.phase_d.server` (see the root README).
+Web app on top of this: `python -m ep_model.review.server` (see the root README).
 
 In code: `EPModel().predict_rows(rows)` takes Phase B-shaped dicts and returns the side to move's expected score.

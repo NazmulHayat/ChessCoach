@@ -3,7 +3,7 @@ import math, re, sys, zlib
 from multiprocessing import Pool
 import numpy as np, zstandard
 
-DUMP = "/Users/nazmulhayat/Desktop/Programming/ChessCoach/lichess_db_standard_rated_2026-02.pgn.zst"
+DUMP = "lichess_db_standard_rated_2026-02.pgn.zst"  # run from the repository root
 HEADER_RE = re.compile(r'^\[(\w+) "([^"]*)"\]', re.M)
 CMT_RE = re.compile(r"(\d+)(\.\.\.|\.)\s+\S+\s+\{([^}]*)\}")
 EVAL_RE = re.compile(r"\[%eval\s+(#?)(-?[\d.]+)\]")

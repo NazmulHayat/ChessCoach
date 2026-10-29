@@ -1,4 +1,4 @@
-// Short tactical hints for the coach: port of ep_model/phase_d/tactics.py.
+// Short tactical hints for the coach: port of ep_model/review/tactics.py.
 import { Chess } from 'chess.js'
 import {
   PIECE_NAMES,

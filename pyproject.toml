@@ -1,0 +1,14 @@
+[project]
+name = "chesscoach"
+version = "1.0.0"
+description = "Chess game review driven by an expected-points model trained on the Lichess database."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Nazmul Hayat" }]
+requires-python = ">=3.11"
+# Pinned ranges live in requirements.txt (training, benchmark, tests) and requirements-server.txt (Docker image).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:chess.engine"]

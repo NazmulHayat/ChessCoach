@@ -1,4 +1,4 @@
-// PGN header / clock helpers: port of the parts of ep_model/phase_a/rowgen.py the review uses.
+// PGN header / clock helpers: port of the parts of ep_model/sampling/rowgen.py the review uses.
 
 export const RATING_BUCKETS = [0, 1000, 1200, 1400, 1600, 1800, 2000, 3000]
 const CLK_RE = /\[%clk\s+([^\]]+)\]/

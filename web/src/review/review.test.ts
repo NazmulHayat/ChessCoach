@@ -1,6 +1,6 @@
 // Parity: the TypeScript review must reproduce Python's reviews of benchmark games, given the same engine fields
 // (fixture: python -m ep_model.scripts.export_web_reviews).
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { loadBook } from './book'
 import { loadTreeModel, type TreeModelJson } from './lgbm'
 import type { RatingMeta } from './rating'
@@ -46,6 +46,9 @@ function close(got: unknown, want: unknown, what: string) {
 }
 
 describe('review matches Python', () => {
+  // Each review is synchronous and CPU-heavy; yield to the event loop between them so Vitest's worker can
+  // answer the runner's RPC calls (otherwise it reports "Timeout calling onTaskUpdate").
+  afterEach(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
   for (const fx of fixtures) {
     it(fx.name, async () => {
       const analyse = async (fens: string[]) => fens.map((f) => fx.engine[f])

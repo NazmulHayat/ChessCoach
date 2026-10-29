@@ -18,6 +18,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | 2026-10-25 | Independent validation (Lichess puzzles, Lichess's own move verdicts, repeatability); fixes: Lichess accuracy formula, Chess.com-style performance rating, deterministic engine jobs. |
 | 2026-10-25 | Runs fully in the browser (Stockfish WASM workers, models as JSON, review ported to TypeScript with parity tests); static hosting on GitHub Pages. Accuracy switched to Lichess's formula on our evals, chosen on the benchmark. |
 | 2026-10-25 | User-reported bullet game exposed clock-driven labels. Built a fixed benchmark (Lichess, Chess.com, puzzles, known cases; per time class); split the chances model from a board-only move-judging model chosen on it. "Played like" game rating in the UI. |
+| 2026-10-29 | PyTorch MLP comparison (ties the shipped model; not shipped). Repository cleanup: descriptive package names, CI, license. |
 
 ## Key numbers
 
@@ -52,7 +53,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | In-browser review | 61-move bullet game in ~14 s (Chrome, 10-core laptop); Stockfish lite 7 MB, models 9.6 MB JSON; lite vs native evals: median 16 cp, best move same 77.5% |
 | Browser parity | 85 vitest tests: 400 model rows within 1e-9, helper checks on 240 positions / 5,000+ moves, 58 full reviews identical to Python |
 | Accuracy choice (benchmark) | Lichess formula on our evals vs on EP loss: gap to Lichess 3.1 vs 5.6, to Chess.com 8.1 vs 9.1, winner-picking 0.960 vs 0.957 |
-| Tests | 60 pytest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
+| Tests | 62 pytest tests + 85 Vitest tests (row generation, features, evaluation, review logic, special labels, retry scoring, rating estimate, tactics, explanations, harvest parsing) |
 
 ## Problems solved
 
@@ -101,53 +102,19 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 - Hyperparameter tuning moved log loss by < 0.001; data volume is the lever. That observation is what motivated the harvesting approach.
 
 
-## UI polish pass — 2026-10-25
+## UI polish pass (2026-10-25)
 
-Implemented `docs/ui-plan.md` Steps 1–6 in order, within presentation files. Existing/concurrent review,
-model, fixture and Python changes in the working tree were preserved; this pass did not edit them.
-No git write commands were used.
+- **Foundation:** design tokens (surfaces, text, status colors, spacing, radii, shadows, motion), consistent button and focus states, Inter with a system fallback, reduced-motion support.
+- **Import:** welcome screen, a bundled 13-ply sample game, the last five reviewed games in browser storage, progress with move count and ETA.
+- **Review:** board sized around the player bars, taller advantage graph with tooltip and keyboard selection, compact coach, summary with accuracy columns.
+- **Sound:** synthesised wood-tap and chime sounds for nine events (no audio files shipped), silent when stepping backward, saved volume.
+- **Help:** label and metric popovers, `?` for keyboard shortcuts, a dismissible first-review tour.
+- **Phone and themes:** width-constrained phone layout, swipe navigation, System / Light / Dark themes that follow the OS live.
 
-1. **Foundation:** surface/text/status tokens, spacing/radii/shadows/motion, consistent button states,
-   focus rings, Inter with system fallback, circular player initials, an original knight coach icon,
-   badge/evaluation transitions, and reduced-motion support (including react-chessboard).
-   Lichess Cburnett/Merida assets could not be downloaded because the asset host did not resolve.
-   Kept the built-in pieces; skipped the extra piece-set selector rather than exposing unavailable sets.
-2. **Import:** welcome/how-it-works screen, a legal 13-ply queen-sacrifice sample, last-five recent
-   games with safe localStorage access, W/L/D pills and clock icons, progress percentage/move count/ETA,
-   and removal of the obsolete server-down banner. Checked `api.ts`: health always reports availability.
-3. **Review:** board dimensions reserve space for the header and both player bars at desktop sizes,
-   larger evaluation text, taller graph with tooltip/crosshair and keyboard selection, compact coach
-   hierarchy/actions, summary accuracy columns, empty-label toggle, and persistent Start Review.
-4. **Sound:** original wood-like tap synthesis and softer chimes, nine events (including castling,
-   promotion, final position and illegal retry drops), sound on forward jumps, silence going backward,
-   and persisted volume. Lichess standard recordings were skipped because COPYING.md places the
-   other `public/sound` assets in the non-free exceptions; no recording was redistributed.
-5. **Understanding:** native top-layer label/metric popovers, keyboard help via a button or `?`,
-   a dismissible/persisted graph → move-list → Retry tour, and wording-only coach refinements.
-6. **Phone/finish:** width-constrained phone layout and compact player bars, fixed navigation/summary
-   actions, horizontal swipe navigation disabled throughout retry, System/Light/Dark tokens and live
-   system-theme updates, focus/ARIA improvements, description/theme-color/Open Graph metadata.
-   Corrected the displayed clock to use the latest completed move. README documents the new UI.
+**Flaky test run.** The 58 parity reviews are synchronous and CPU-heavy, so Vitest's worker never yielded to the event loop and the runner reported `Timeout calling "onTaskUpdate"` after all 85 tests had passed, failing the run. Yielding once between tests (`afterEach` with a zero-delay timer) fixed it without touching any assertion.
 
-Validation: lint, all 85 tests (5 files), and production build were run at every step. The unmodified
-`npm test` command initially passed every assertion but exited with Vitest's internal
-`[vitest-worker]: Timeout calling "onTaskUpdate"` error, twice. A worker-thread trial also failed to
-initialize Stockfish. Checks therefore use a temporary config and runner outside the repository:
+## Repository cleanup (2026-10-29)
 
-```sh
-cd web
-npm run lint && npm test -- --config /tmp/chesscoach-ui-vitest.config.mjs && npm run build
-```
-
-The temporary config extends the existing Vite config and selects a subclass of `VitestTestRunner`
-whose `onAfterRunTask` awaits the parent method and one `setImmediate`. This gives the fork time to
-process IPC between CPU-heavy parity cases. No assertions, test selection, or error checks are disabled;
-no test, dependency, engine, or repository config file was changed. The complete suite passes with this
-runner. The default runner limitation remains to be addressed separately if it reproduces elsewhere.
-Additional checks cover the sample's legality/checkmate, recent-history limits/deduplication and
-unavailable/corrupt storage, audio event routing, and text-token contrast in both themes.
-
-Screenshots were skipped: installed Chromium headless shell and Google Chrome both failed to launch
-in the restricted environment (process termination / SIGABRT). Existing images are preserved and
-identified as earlier UI in README; 1280×720 and 360px layouts have not received browser visual QA.
-No screenshot is claimed as current. Asset sources, licenses and fallbacks are in `web/public/CREDITS.md`.
+- Pipeline packages renamed by what they do: `phase_a` → `sampling`, `phase_b` → `labeling`, `phase_c` → `training`, `phase_d` → `review` (the stages are still called A–D in this log).
+- CI on every push: pytest (with Stockfish), ESLint, Vitest and the production build.
+- Legacy engine wrapper moved into `archive/`, duplicate requirement files merged, project metadata and tool config in `pyproject.toml`.

@@ -1,7 +1,7 @@
 import json, sys, time
 import numpy as np, lightgbm as lgb
-sys.path.insert(0, "/Users/nazmulhayat/Desktop/Programming/ChessCoach")
-from ep_model.phase_d import rating_estimate as RE
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+from ep_model.review import rating_estimate as RE
 
 D = np.load(sys.argv[1]); pg, mv = D["pg"], D["mv"]
 GI, CRC, ELO, OPP, SCORE, NM = pg.T

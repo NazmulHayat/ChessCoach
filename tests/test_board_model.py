@@ -10,8 +10,8 @@ import chess.pgn
 import numpy as np
 import pytest
 
-from ep_model.phase_d.predictor import EPModel, board_model_dir
-from ep_model.phase_d.review import label_for_loss, review_game
+from ep_model.review.predictor import EPModel, board_model_dir
+from ep_model.review.review import label_for_loss, review_game
 
 if not (board_model_dir() / "ep_lgbm.txt").is_file():
     pytest.skip("board model not present", allow_module_level=True)

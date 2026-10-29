@@ -1,4 +1,4 @@
-// In-browser port of ep_model/phase_d/review.py (review_game, score_attempt). Same rules and numbers; tested
+// In-browser port of ep_model/review/review.py (review_game, score_attempt). Same rules and numbers; tested
 // against Python reviews of the benchmark games (review.test.ts, fixture from scripts/export_web_reviews.py).
 import { Chess, type Square } from 'chess.js'
 

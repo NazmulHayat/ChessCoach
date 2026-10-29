@@ -1,4 +1,4 @@
-// Game accuracy, Lichess-style: port of ep_model/phase_d/accuracy.py.
+// Game accuracy, Lichess-style: port of ep_model/review/accuracy.py.
 
 export function winPercent(cpWhite: number): number {
   const cp = Math.max(-1000, Math.min(1000, cpWhite))

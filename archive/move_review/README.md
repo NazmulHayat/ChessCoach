@@ -1,6 +1,6 @@
 # Move review (archived)
 
-Chess.com–like game review: parse PGN, run Stockfish (`engine/` at repo root), classify moves, compare against `tests/*_expected.json`.
+Chess.com–like game review: parse PGN, run Stockfish (`engine/` in this folder), classify moves, compare against `tests/*_expected.json`.
 
 Requires Stockfish on `PATH` as `stockfish` (see `engine/stockfish_engine.py`).
 

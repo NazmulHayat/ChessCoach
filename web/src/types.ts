@@ -1,4 +1,4 @@
-// Shapes returned by the FastAPI server (ep_model/phase_d/review.py, server.py).
+// Shapes returned by the FastAPI server (ep_model/review/review.py, server.py).
 
 export type Label =
   | 'brilliant'

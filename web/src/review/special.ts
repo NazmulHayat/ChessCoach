@@ -1,4 +1,4 @@
-// Great / Miss / Brilliant rules and material helpers: port of ep_model/phase_d/special.py (see the docstrings
+// Great / Miss / Brilliant rules and material helpers: port of ep_model/review/special.py (see the docstrings
 // there). Moves are UCI strings; the board is mutated temporarily (move + undo) and left as it was.
 import { Chess, type Move, type PieceSymbol, type Square } from 'chess.js'
 

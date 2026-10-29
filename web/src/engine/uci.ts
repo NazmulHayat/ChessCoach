@@ -1,5 +1,5 @@
 // UCI protocol handling for Stockfish, shared by the browser worker pool and node tests. Builds the same
-// fields as the Python reference (ep_model/phase_d/engine_pool.analysis_fields): per multipv line, every
+// fields as the Python reference (ep_model/review/engine_pool.analysis_fields): per multipv line, every
 // "info" line is merged into the previous one, as python-chess does, so the last score / pv / depth win.
 
 import type { EngineFields } from '../review/types'

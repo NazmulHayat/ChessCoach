@@ -31,7 +31,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import zstandard
 
-from ep_model.phase_a.rowgen import (
+from ep_model.sampling.rowgen import (
     classify_time_class,
     extract_game_id,
     game_phase_from_half_moves,
@@ -40,7 +40,7 @@ from ep_model.phase_a.rowgen import (
     parse_time_control,
     rating_band_from_average,
 )
-from ep_model.phase_b.augment_evals import OUTPUT_SCHEMA
+from ep_model.labeling.augment_evals import OUTPUT_SCHEMA
 
 LOG = logging.getLogger(__name__)
 

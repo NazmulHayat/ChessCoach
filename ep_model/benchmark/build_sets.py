@@ -29,7 +29,7 @@ from pathlib import Path
 import chess
 import httpx
 
-from ep_model.phase_a.generate_rows import stream_games
+from ep_model.sampling.generate_rows import stream_games
 
 LOG = logging.getLogger(__name__)
 REPO = Path(__file__).resolve().parents[2]

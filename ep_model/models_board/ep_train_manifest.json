@@ -159,7 +159,7 @@
     "rows_lichess_part00045.parquet"
   ],
   "input_dir": "ep_model/processed_lichess",
-  "engine_policy_path": "/Users/nazmulhayat/Desktop/Programming/ChessCoach/ep_model/config/engine_policy.json",
+  "engine_policy_path": "ep_model/config/engine_policy.json",
   "finetune": {
     "base_model_dir": "ep_model/models_board_rapid_lichess",
     "base_trees": 228,

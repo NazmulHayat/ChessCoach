@@ -1,4 +1,4 @@
-// Shared shapes for the in-browser review (a TypeScript port of ep_model/phase_d). Field names match the
+// Shared shapes for the in-browser review (a TypeScript port of ep_model/review). Field names match the
 // Python dicts, so fixtures exported from Python can be compared directly.
 
 /** One engine result for a FEN (Python: engine_pool.analysis_fields). Scores are centipawns / mate-in-N. */

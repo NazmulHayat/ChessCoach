@@ -1,4 +1,4 @@
-// Game rating ("played like") and phase grades: port of ep_model/phase_d/rating_estimate.py.
+// Game rating ("played like") and phase grades: port of ep_model/review/rating_estimate.py.
 import type { Chess } from 'chess.js'
 import { combine } from './accuracy'
 import { pyRound } from './ratings'

@@ -8,8 +8,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from ep_model.phase_c.prepare import CATEGORICAL_FEATURES, FEATURE_NAMES  # noqa: E402
-from ep_model.phase_c.train_nn import META_FILE, MODEL_FILE, EPNet, EPNetPredictor, category_codes, numeric_matrix  # noqa: E402
+from ep_model.training.prepare import CATEGORICAL_FEATURES, FEATURE_NAMES  # noqa: E402
+from ep_model.training.train_nn import META_FILE, MODEL_FILE, EPNet, EPNetPredictor, category_codes, numeric_matrix  # noqa: E402
 
 
 def _frame(n: int = 6) -> pd.DataFrame:

@@ -1,4 +1,4 @@
-// Model features for one row: a port of add_model_features / cp_or_mate_proxy (ep_model/phase_c/prepare.py).
+// Model features for one row: a port of add_model_features / cp_or_mate_proxy (ep_model/training/prepare.py).
 import type { ModelRow } from './types'
 
 /** Mate-in-N (signed, side to move) on a centipawn-like scale. */

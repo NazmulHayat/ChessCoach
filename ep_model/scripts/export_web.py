@@ -31,8 +31,8 @@ import chess.polyglot
 import lightgbm as lgb
 import pandas as pd
 
-from ep_model.phase_c.prepare import add_model_features
-from ep_model.phase_d.predictor import EPModel, board_model_dir, default_model_dir
+from ep_model.training.prepare import add_model_features
+from ep_model.review.predictor import EPModel, board_model_dir, default_model_dir
 
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "web" / "public" / "data"
@@ -121,7 +121,7 @@ def main() -> int:
     board, chances = EPModel(board_model_dir()), EPModel(default_model_dir())
     export_booster(board.booster, OUT / "models" / "board.json")
     export_booster(chances.booster, OUT / "models" / "chances.json")
-    rating_dir = REPO / "ep_model" / "phase_d" / "data"
+    rating_dir = REPO / "ep_model" / "review" / "data"
     meta = json.loads((rating_dir / "rating_estimate.json").read_text(encoding="utf-8"))
     export_booster(
         lgb.Booster(model_file=str(rating_dir / "rating_lgbm.txt")),

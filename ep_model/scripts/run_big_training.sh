@@ -9,7 +9,7 @@ cd "$ROOT"
 source .venv/bin/activate
 
 echo "=== Phase A: up to 100000 new games, resume, shard-rows 50000 ==="
-python -m ep_model.phase_a.generate_rows \
+python -m ep_model.sampling.generate_rows \
   --resume \
   --shard-rows 50000 \
   --max-games 100000 \
@@ -26,7 +26,7 @@ python -m ep_model.scripts.safe_run \
   -v 2>&1 | tee ep_model/processed/safe_run_big.log
 
 echo "=== Phase C: train on all Phase B shards + evaluate vs baselines ==="
-python -m ep_model.phase_c.train --sharded-load -v
-python -m ep_model.phase_c.evaluate -v
+python -m ep_model.training.train --sharded-load -v
+python -m ep_model.training.evaluate -v
 
 echo "=== Done: $(date -u) — see ep_model/models/ep_eval_report.md ==="

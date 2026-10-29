@@ -21,12 +21,12 @@ import chess
 import chess.pgn
 import chess.polyglot
 
-from ep_model.phase_a import rowgen
-from ep_model.phase_d import accuracy, rating_estimate, ratings, special, tactics
+from ep_model.sampling import rowgen
+from ep_model.review import accuracy, rating_estimate, ratings, special, tactics
 
 REPO = Path(__file__).resolve().parents[2]
 BENCH = REPO / "ep_model" / "benchmark" / "data"
-BOOK = REPO / "ep_model" / "phase_d" / "data" / "book.bin"
+BOOK = REPO / "ep_model" / "review" / "data" / "book.bin"
 OUT = REPO / "web" / "src" / "review" / "__fixtures__"
 
 
@@ -224,7 +224,7 @@ def rating_cases(rng: random.Random) -> dict:
         feats.append({"losses": losses, "abs_cp": cps, "time_class": tc, "features": rating_estimate.features(losses, cps, tc)})
         ests.append({"losses": losses, "abs_cp": cps, "time_class": tc, "rating": r, "result": rating_estimate.estimate_rating(losses, cps, tc, r)})
     # Raw model scores at the ends of the inverse tables (np.interp clamping).
-    meta = json.loads((REPO / "ep_model" / "phase_d" / "data" / "rating_estimate.json").read_text(encoding="utf-8"))
+    meta = json.loads((REPO / "ep_model" / "review" / "data" / "rating_estimate.json").read_text(encoding="utf-8"))
     interp = []
     import numpy as np
 

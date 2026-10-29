@@ -28,10 +28,10 @@ from typing import Any, Callable
 import chess
 import chess.pgn
 
-from ep_model.phase_d.accuracy import lichess_game_accuracy
-from ep_model.phase_d.engine_pool import EnginePool
-from ep_model.phase_d.predictor import EPModel
-from ep_model.phase_d.review import review_game
+from ep_model.review.accuracy import lichess_game_accuracy
+from ep_model.review.engine_pool import EnginePool
+from ep_model.review.predictor import EPModel
+from ep_model.review.review import review_game
 
 LOG = logging.getLogger(__name__)
 HERE = Path(__file__).resolve().parent
