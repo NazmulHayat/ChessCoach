@@ -10,11 +10,12 @@ interface Props {
   markers: { ply: number; label: Label }[]
   onSelect?: (ply: number) => void
   height?: number
+  axisLabel?: string // the dashed midline: 50% chances, or 0.0 in engine mode
 }
 
 const W = 600
 
-export function Graph({ values, chances = values, moves = [], current, markers, onSelect, height = 104 }: Props) {
+export function Graph({ values, chances = values, moves = [], current, markers, onSelect, height = 104, axisLabel = '50%' }: Props) {
   const ref = useRef<SVGSVGElement>(null)
   const [hover, setHover] = useState<number | null>(null)
   const n = Math.max(values.length, 2)
@@ -67,13 +68,13 @@ export function Graph({ values, chances = values, moves = [], current, markers, 
         <rect width={W} height={height} fill="var(--graph-black)" />
         {values.length > 1 && <path d={`M0,${height} L${line} L${W},${height} Z`} fill="var(--graph-white)" />}
         <line x1={0} x2={W} y1={height / 2} y2={height / 2} stroke="var(--graph-axis)" strokeWidth={1} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-        {current !== null && <line x1={x(current)} x2={x(current)} y1={0} y2={height} stroke="var(--accent)" strokeWidth={2} vectorEffect="non-scaling-stroke" />}
+        {current !== null && <line x1={x(current)} x2={x(current)} y1={0} y2={height} stroke="var(--graph-cursor)" strokeWidth={2} vectorEffect="non-scaling-stroke" />}
         {markers.map((m) => (
           <circle key={m.ply} cx={x(m.ply)} cy={Math.max(5, Math.min(height - 5, y(values[m.ply] ?? .5)))} r={4.5} fill={LABELS[m.label].color} stroke="var(--graph-axis)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
         ))}
         {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={0} y2={height} stroke="var(--graph-cursor)" strokeWidth={2} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
       </svg>
-      <span className="graph-axis" aria-hidden>50%</span>
+      <span className="graph-axis" aria-hidden>{axisLabel}</span>
       {hover !== null && <div className="graph-tooltip" role="tooltip">{description}</div>}
     </div>
   )

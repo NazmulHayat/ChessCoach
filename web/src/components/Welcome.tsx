@@ -1,15 +1,33 @@
-export function Welcome() {
+import { Chessboard } from 'react-chessboard'
+import { highlight } from '../lib/highlight'
+import { Mat } from './BoardArea'
+
+// Final position of the sample game: Légal's mate, 7.Nd5#.
+const SAMPLE_MATE = 'r2q1bnr/ppp1kBpp/2np4/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7'
+
+export function Welcome({ colors }: { colors: { light: string; dark: string } }) {
   return (
     <div className="welcome">
-      <div className="welcome-mark" aria-hidden>♞</div>
-      <h1>Free game review,<br />right in your browser</h1>
-      <p className="welcome-pitch">Chess.com-style move labels, accuracy, game rating, and a chance to retry your mistakes. Nothing uploaded. Analysis runs locally.</p>
-      <ol className="how-it-works">
-        <li><span>1</span><div><strong>Pick a game</strong><p>Import from Chess.com or Lichess, or paste a PGN.</p></div></li>
-        <li><span>2</span><div><strong>We analyze every move</strong><p>See where the game turned and what you could improve.</p></div></li>
-        <li><span>3</span><div><strong>Review and retry mistakes</strong><p>Find a better move on the board and make it stick.</p></div></li>
-      </ol>
-      <p className="welcome-foot">No account needed · Powered by Stockfish</p>
+      <h1>Free game review, right in your browser</h1>
+      <p className="welcome-pitch">Chess.com-style move labels, accuracy and game rating, judged by your real chances at your rating. Retry your mistakes on the board. Nothing uploaded; Stockfish runs locally.</p>
+      <figure className="welcome-board">
+        <Mat orientation="white">
+          <div className="board">
+            <Chessboard
+              id="welcome-board"
+              position={SAMPLE_MATE}
+              arePiecesDraggable={false}
+              areArrowsAllowed={false}
+              showBoardNotation={false}
+              customSquareStyles={{ c3: highlight('c3'), d5: highlight('d5') }}
+              customDarkSquareStyle={{ backgroundColor: colors.dark }}
+              customLightSquareStyle={{ backgroundColor: colors.light }}
+              customBoardStyle={{ borderRadius: '2px' }}
+            />
+          </div>
+        </Mat>
+        <figcaption>The sample game ends in Légal’s mate: <strong>7.Nd5#</strong></figcaption>
+      </figure>
     </div>
   )
 }

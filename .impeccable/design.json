@@ -1,0 +1,930 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T16:37:04+00:00",
+  "title": "Design System: elo101",
+  "extensions": {
+    "colorMeta": {
+      "vinyl-green": {
+        "role": "neutral",
+        "displayName": "Vinyl Green",
+        "canonical": "oklch(23.5% 0.026 160.3)",
+        "tonalRamp": [
+          "#0a0c0b",
+          "#202723",
+          "#39453e",
+          "#56665d",
+          "#76877d",
+          "#99aaa0",
+          "#bfcdc5",
+          "#e9f1ec"
+        ],
+        "purpose": "Dark page ground and top bar."
+      },
+      "mat-green": {
+        "role": "neutral",
+        "displayName": "Mat Green",
+        "canonical": "oklch(30.7% 0.042 157.4)",
+        "tonalRamp": [
+          "#090c0a",
+          "#1e2821",
+          "#34473b",
+          "#4e6858",
+          "#6e8a78",
+          "#91ad9b",
+          "#bad0c1",
+          "#e6f2ea"
+        ],
+        "purpose": "Board mat in the dark appearance."
+      },
+      "mat-ink": {
+        "role": "neutral",
+        "displayName": "Mat Ink",
+        "canonical": "oklch(84.1% 0.037 95.1)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#27251c",
+          "#474231",
+          "#67614b",
+          "#898269",
+          "#aca58d",
+          "#cec9b6",
+          "#f1efe4"
+        ],
+        "purpose": "Printed coordinates on the mat."
+      },
+      "buff-paper": {
+        "role": "neutral",
+        "displayName": "Buff Paper",
+        "canonical": "oklch(92.4% 0.031 93.0)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#27251d",
+          "#464234",
+          "#67614e",
+          "#89826d",
+          "#aba591",
+          "#cec9b9",
+          "#f1eee5"
+        ],
+        "purpose": "Panel and popover surface; Club light squares."
+      },
+      "buff-paper-2": {
+        "role": "neutral",
+        "displayName": "Buff Paper, Ruled",
+        "canonical": "oklch(89.1% 0.037 93.4)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#28251c",
+          "#474231",
+          "#68614b",
+          "#8a8269",
+          "#aca58d",
+          "#cfc9b6",
+          "#f2eee4"
+        ],
+        "purpose": "Resting paper buttons, segmented track, nav controls, row hover."
+      },
+      "buff-paper-3": {
+        "role": "neutral",
+        "displayName": "Buff Paper, Pressed",
+        "canonical": "oklch(84.7% 0.044 94.1)",
+        "tonalRamp": [
+          "#0c0b08",
+          "#28251a",
+          "#48422e",
+          "#696146",
+          "#8b8264",
+          "#ada589",
+          "#d0c9b2",
+          "#f2efe2"
+        ],
+        "purpose": "Paper button hover, toggle-off track."
+      },
+      "field-cream": {
+        "role": "neutral",
+        "displayName": "Field Cream",
+        "canonical": "oklch(96.6% 0.019 93.7)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#262521",
+          "#444239",
+          "#646156",
+          "#868276",
+          "#a8a599",
+          "#ccc9bf",
+          "#f0eee9"
+        ],
+        "purpose": "Inputs, kbd keys, toggle knob."
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Scoresheet Ink",
+        "canonical": "oklch(23.3% 0.011 139.4)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242623",
+          "#40433f",
+          "#5e635d",
+          "#7f847e",
+          "#a2a7a1",
+          "#c6cac5",
+          "#edefec"
+        ],
+        "purpose": "Primary text on paper."
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink, Secondary",
+        "canonical": "oklch(36.3% 0.020 127.3)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#242621",
+          "#40443b",
+          "#5e6358",
+          "#7f8578",
+          "#a2a79b",
+          "#c6cbc1",
+          "#edefea"
+        ],
+        "purpose": "Body text on paper."
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Ink, Muted",
+        "canonical": "oklch(48.4% 0.024 122.3)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#242620",
+          "#404439",
+          "#5f6355",
+          "#808575",
+          "#a2a898",
+          "#c7cbbf",
+          "#edf0e9"
+        ],
+        "purpose": "Muted text on paper."
+      },
+      "text-2-on-green": {
+        "role": "neutral",
+        "displayName": "Cream Text",
+        "canonical": "oklch(81.6% 0.033 95.5)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#27251d",
+          "#464233",
+          "#67614d",
+          "#88836c",
+          "#aba590",
+          "#cec9b8",
+          "#f1efe5"
+        ],
+        "purpose": "Secondary text on the green ground."
+      },
+      "muted-on-green": {
+        "role": "neutral",
+        "displayName": "Sage Muted",
+        "canonical": "oklch(70.6% 0.032 126.2)",
+        "tonalRamp": [
+          "#0b0c09",
+          "#23261f",
+          "#3f4437",
+          "#5d6552",
+          "#7d8672",
+          "#a0a995",
+          "#c5ccbc",
+          "#ecf0e7"
+        ],
+        "purpose": "Muted text on the green ground."
+      },
+      "club-green": {
+        "role": "primary",
+        "displayName": "Club Green",
+        "canonical": "oklch(43.5% 0.077 150.0)",
+        "tonalRamp": [
+          "#080d09",
+          "#192a1c",
+          "#2a4b31",
+          "#426d4b",
+          "#60906a",
+          "#85b28e",
+          "#b0d4b6",
+          "#e1f5e4"
+        ],
+        "purpose": "Where you are: current move, active option, play, toggles, progress, focus on paper."
+      },
+      "club-green-hover": {
+        "role": "primary",
+        "displayName": "Club Green, Hover",
+        "canonical": "oklch(48.7% 0.086 150.1)",
+        "tonalRamp": [
+          "#070d08",
+          "#172a1b",
+          "#264c2f",
+          "#3d6e48",
+          "#5b9167",
+          "#81b48b",
+          "#add5b4",
+          "#dff5e3"
+        ],
+        "purpose": "Hover for green controls."
+      },
+      "on-green": {
+        "role": "primary",
+        "displayName": "Cream on Green",
+        "canonical": "oklch(94.8% 0.023 93.3)",
+        "tonalRamp": [
+          "#0c0b0a",
+          "#27251f",
+          "#454238",
+          "#656153",
+          "#878273",
+          "#a9a596",
+          "#cdc9bd",
+          "#f0eee8"
+        ],
+        "purpose": "Text on club green."
+      },
+      "brass": {
+        "role": "secondary",
+        "displayName": "Brass",
+        "canonical": "oklch(75.1% 0.130 79.8)",
+        "tonalRamp": [
+          "#0f0a03",
+          "#332100",
+          "#5d3a00",
+          "#855700",
+          "#ab7800",
+          "#cc9c43",
+          "#eac382",
+          "#ffebc9"
+        ],
+        "purpose": "What you can do: primary buttons only; focus ring on the green ground."
+      },
+      "brass-hover": {
+        "role": "secondary",
+        "displayName": "Brass, Hover",
+        "canonical": "oklch(79.8% 0.122 82.0)",
+        "tonalRamp": [
+          "#0f0a04",
+          "#322200",
+          "#5a3c00",
+          "#815900",
+          "#a67a0e",
+          "#c89e4b",
+          "#e6c486",
+          "#ffeccb"
+        ],
+        "purpose": "Primary button hover."
+      },
+      "success": {
+        "role": "neutral",
+        "displayName": "Win Green",
+        "canonical": "oklch(47.3% 0.107 144.9)",
+        "tonalRamp": [
+          "#070d07",
+          "#152b16",
+          "#234d25",
+          "#38703b",
+          "#579359",
+          "#7db67e",
+          "#aad7aa",
+          "#def7dd"
+        ],
+        "purpose": "Win result pill."
+      },
+      "danger": {
+        "role": "neutral",
+        "displayName": "Loss Red",
+        "canonical": "oklch(48.7% 0.149 28.0)",
+        "tonalRamp": [
+          "#130806",
+          "#401612",
+          "#72231d",
+          "#a23930",
+          "#cc594d",
+          "#ef8073",
+          "#ffaea2",
+          "#ffe0d9"
+        ],
+        "purpose": "Loss result pill."
+      },
+      "error-text": {
+        "role": "neutral",
+        "displayName": "Error Ink",
+        "canonical": "oklch(43.0% 0.133 31.2)",
+        "tonalRamp": [
+          "#130806",
+          "#3d1912",
+          "#6e291e",
+          "#9c4032",
+          "#c5604f",
+          "#e88674",
+          "#ffb2a3",
+          "#ffe2d9"
+        ],
+        "purpose": "Error banner text."
+      },
+      "square-dark-club": {
+        "role": "neutral",
+        "displayName": "Club Dark Square",
+        "canonical": "oklch(53.4% 0.078 150.4)",
+        "tonalRamp": [
+          "#080d09",
+          "#182a1c",
+          "#294b31",
+          "#416d4b",
+          "#5f906a",
+          "#84b28d",
+          "#b0d4b6",
+          "#e1f5e4"
+        ],
+        "purpose": "Dark squares on the default Club board."
+      },
+      "square-highlight-light": {
+        "role": "neutral",
+        "displayName": "Last-move Light",
+        "canonical": "oklch(89.3% 0.109 96.1)",
+        "tonalRamp": [
+          "#0d0b04",
+          "#2c2505",
+          "#4f4100",
+          "#736000",
+          "#968228",
+          "#b8a557",
+          "#d8ca8e",
+          "#f7efcf"
+        ],
+        "purpose": "Last-move tint on light squares."
+      },
+      "square-highlight-dark": {
+        "role": "neutral",
+        "displayName": "Last-move Dark",
+        "canonical": "oklch(76.9% 0.134 106.3)",
+        "tonalRamp": [
+          "#0c0c03",
+          "#292600",
+          "#4a4400",
+          "#6b6400",
+          "#8d8600",
+          "#afaa43",
+          "#d1ce82",
+          "#f2f1c9"
+        ],
+        "purpose": "Last-move tint on dark squares."
+      },
+      "black-piece": {
+        "role": "neutral",
+        "displayName": "Black Piece",
+        "canonical": "oklch(20.0% 0.021 156.0)",
+        "tonalRamp": [
+          "#0a0c0b",
+          "#222623",
+          "#3b453e",
+          "#58655c",
+          "#79867d",
+          "#9ca9a0",
+          "#c2ccc5",
+          "#eaf0ec"
+        ],
+        "purpose": "Black side disc, clock, eval field."
+      },
+      "graph-black": {
+        "role": "neutral",
+        "displayName": "Graph Field",
+        "canonical": "oklch(31.2% 0.034 157.4)",
+        "tonalRamp": [
+          "#090c0a",
+          "#1f2722",
+          "#37463d",
+          "#53675a",
+          "#72897a",
+          "#96ab9d",
+          "#bdcec3",
+          "#e8f1eb"
+        ],
+        "purpose": "Black side of the advantage graph."
+      },
+      "label-brilliant": {
+        "role": "tertiary",
+        "displayName": "Brilliant Teal",
+        "canonical": "oklch(69.5% 0.121 180.1)",
+        "tonalRamp": [
+          "#040e0b",
+          "#002d26",
+          "#005144",
+          "#007564",
+          "#009985",
+          "#40bca8",
+          "#86dccb",
+          "#cdfaf0"
+        ],
+        "purpose": "Chess.com Brilliant (!!)."
+      },
+      "label-great": {
+        "role": "tertiary",
+        "displayName": "Great Blue",
+        "canonical": "oklch(63.7% 0.097 250.9)",
+        "tonalRamp": [
+          "#070c11",
+          "#142639",
+          "#214467",
+          "#366493",
+          "#5486ba",
+          "#7aa9dc",
+          "#a8cdf6",
+          "#dcf1ff"
+        ],
+        "purpose": "Chess.com Great (!)."
+      },
+      "label-best": {
+        "role": "tertiary",
+        "displayName": "Best Green",
+        "canonical": "oklch(71.6% 0.148 131.5)",
+        "tonalRamp": [
+          "#080d04",
+          "#192b04",
+          "#2b4d00",
+          "#427000",
+          "#619426",
+          "#85b656",
+          "#b0d88e",
+          "#e1f7cf"
+        ],
+        "purpose": "Chess.com Best (★)."
+      },
+      "label-excellent": {
+        "role": "tertiary",
+        "displayName": "Excellent Green",
+        "canonical": "oklch(74.4% 0.147 125.5)",
+        "tonalRamp": [
+          "#090d04",
+          "#1d2a01",
+          "#344b00",
+          "#4e6e00",
+          "#6d9114",
+          "#91b44d",
+          "#b8d688",
+          "#e5f6cc"
+        ],
+        "purpose": "Chess.com Excellent (+)."
+      },
+      "label-good": {
+        "role": "tertiary",
+        "displayName": "Good Sage",
+        "canonical": "oklch(70.6% 0.053 140.6)",
+        "tonalRamp": [
+          "#090c09",
+          "#1f281d",
+          "#364733",
+          "#52694e",
+          "#718b6d",
+          "#95ad90",
+          "#bcd0b8",
+          "#e7f2e5"
+        ],
+        "purpose": "Chess.com Good (✓)."
+      },
+      "label-book": {
+        "role": "tertiary",
+        "displayName": "Book Brown",
+        "canonical": "oklch(64.8% 0.062 68.9)",
+        "tonalRamp": [
+          "#0e0a07",
+          "#2e2316",
+          "#533d25",
+          "#775b3c",
+          "#9b7c59",
+          "#bd9f7e",
+          "#ddc4aa",
+          "#faecdd"
+        ],
+        "purpose": "Chess.com Book (B)."
+      },
+      "label-inaccuracy": {
+        "role": "tertiary",
+        "displayName": "Inaccuracy Amber",
+        "canonical": "oklch(80.4% 0.156 82.5)",
+        "tonalRamp": [
+          "#100a02",
+          "#352100",
+          "#603900",
+          "#895500",
+          "#af7600",
+          "#d19b15",
+          "#edc26f",
+          "#ffebc0"
+        ],
+        "purpose": "Chess.com Inaccuracy (?!)."
+      },
+      "label-mistake": {
+        "role": "tertiary",
+        "displayName": "Mistake Orange",
+        "canonical": "oklch(77.0% 0.152 51.6)",
+        "tonalRamp": [
+          "#130804",
+          "#3e1900",
+          "#6f2a00",
+          "#9d4200",
+          "#c7620f",
+          "#e9894a",
+          "#ffb485",
+          "#ffe4ca"
+        ],
+        "purpose": "Chess.com Mistake (?)."
+      },
+      "label-miss": {
+        "role": "tertiary",
+        "displayName": "Miss Pink",
+        "canonical": "oklch(68.9% 0.162 8.9)",
+        "tonalRamp": [
+          "#140709",
+          "#41131e",
+          "#741b34",
+          "#a4304f",
+          "#cf506e",
+          "#f27991",
+          "#ffa8b9",
+          "#ffdde5"
+        ],
+        "purpose": "Chess.com Miss (✕)."
+      },
+      "label-blunder": {
+        "role": "tertiary",
+        "displayName": "Blunder Red",
+        "canonical": "oklch(73.1% 0.165 25.8)",
+        "tonalRamp": [
+          "#140706",
+          "#421311",
+          "#771c1b",
+          "#a8312e",
+          "#d3514b",
+          "#f67a72",
+          "#ffaaa0",
+          "#ffded8"
+        ],
+        "purpose": "Chess.com Blunder (??)."
+      },
+      "page-light": {
+        "role": "neutral",
+        "displayName": "Buff Ground",
+        "canonical": "oklch(90.3% 0.032 93.0)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#27251d",
+          "#464234",
+          "#67614e",
+          "#89826d",
+          "#aba591",
+          "#cec9b9",
+          "#f1eee5"
+        ],
+        "purpose": "Page ground in the light appearance."
+      },
+      "mat-green-light": {
+        "role": "neutral",
+        "displayName": "Mat Green, Light",
+        "canonical": "oklch(40.6% 0.072 149.9)",
+        "tonalRamp": [
+          "#080c09",
+          "#1a291d",
+          "#2c4a32",
+          "#446c4d",
+          "#638f6c",
+          "#88b18f",
+          "#b2d3b8",
+          "#e2f4e5"
+        ],
+        "purpose": "Board mat in the light appearance."
+      },
+      "paper-light": {
+        "role": "neutral",
+        "displayName": "Paper, Light",
+        "canonical": "oklch(97.9% 0.012 91.5)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#262522",
+          "#44423c",
+          "#63615a",
+          "#85827a",
+          "#a7a59d",
+          "#cbc9c3",
+          "#efeeeb"
+        ],
+        "purpose": "Panel surface in the light appearance."
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Start-screen headline only; 34px under 960px, 32px under 640px."
+      },
+      "display-numeral": {
+        "displayName": "Display Numeral",
+        "purpose": "Per-player accuracy in the summary; 38px on phones."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Analyzing title; the brand wordmark uses Bricolage 800 20px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel title and coach heading (17px on phones); popover headings 18px."
+      },
+      "stat": {
+        "displayName": "Stat",
+        "purpose": "Clocks and label-table counts; game rating values at 22px."
+      },
+      "coordinate": {
+        "displayName": "Coordinate",
+        "purpose": "Printed a–h / 1–8 on the mat; 10px on phones."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base text; pitch at 16px / 48ch."
+      },
+      "body-sm": {
+        "displayName": "Body Small",
+        "purpose": "Coach body, move list, info copy."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons."
+      },
+      "label-sm": {
+        "displayName": "Label Small",
+        "purpose": "Small buttons, segmented options, settings labels."
+      },
+      "section-label": {
+        "displayName": "Section Label",
+        "purpose": "Uppercase heading of a data group in the panel; never an eyebrow above a headline."
+      }
+    },
+    "shadows": [
+      {
+        "name": "board-lift",
+        "value": "0 2px 8px rgba(0, 0, 0, .35)",
+        "purpose": "Chessboard on the mat (light: rgba(20, 35, 25, .3))."
+      },
+      {
+        "name": "popover",
+        "value": "0 14px 36px -14px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .16)",
+        "purpose": "Settings, info, help and tour cards (light: green-black at .35 / .1)."
+      },
+      {
+        "name": "square-badge",
+        "value": "drop-shadow(0 1px 2px rgba(0, 0, 0, .45))",
+        "purpose": "Move-label badge on the destination square (CSS filter)."
+      },
+      {
+        "name": "pinned-controls",
+        "value": "0 -6px 18px -10px rgba(0, 0, 0, .4)",
+        "purpose": "Phone bottom nav bar only."
+      },
+      {
+        "name": "focus-ring",
+        "value": "outline: 3px solid var(--focus); outline-offset: 2px",
+        "purpose": "All focus-visible; brass on the green ground, green on paper and in light."
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent)",
+        "purpose": "Text field focus ring with green border."
+      },
+      {
+        "name": "panel-outline-light",
+        "value": "outline: 1px solid var(--paper-line-strong); outline-offset: -1px",
+        "purpose": "Panel edge in the light appearance instead of a shadow."
+      }
+    ],
+    "motion": [
+      {
+        "name": "motion-fast",
+        "value": "160ms",
+        "purpose": "Hover, background and colour transitions."
+      },
+      {
+        "name": "motion-normal",
+        "value": "260ms",
+        "purpose": "Eval fill, progress, toggle knob, badge pop."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.22, 1, .36, 1)",
+        "purpose": "Default easing for state changes."
+      },
+      {
+        "name": "badge-in",
+        "value": "scale(.5)->1, opacity 0->1, 260ms ease-out",
+        "purpose": "Square badge entrance."
+      },
+      {
+        "name": "press",
+        "value": "translateY(1px) on :active",
+        "purpose": "Button press feedback."
+      },
+      {
+        "name": "spinner",
+        "value": "rotate 360deg, .9s linear infinite",
+        "purpose": "Analyzing spinner."
+      },
+      {
+        "name": "shimmer",
+        "value": "1.3s ease-in-out infinite",
+        "purpose": "Skeleton loading."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "all animations and transitions off",
+        "purpose": "prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tablet",
+        "value": "960px"
+      },
+      {
+        "name": "phone",
+        "value": "640px"
+      }
+    ],
+    "themes": {
+      "dark": "Default. :root tokens.",
+      "light": ":root[data-theme=\"light\"] remaps ground, mat, paper, field, graph field and shadows; accents and labels unchanged.",
+      "paperRemap": ".panel, .settings-pop, .info-pop, .help-pop, .tour-card remap --text/--text-2/--muted/--line/--line-strong/--hover/--focus to ink and paper tokens.",
+      "boardThemes": {
+        "club": [
+          "#ede6cf",
+          "#4a7a55"
+        ],
+        "green": [
+          "#eeeed2",
+          "#769656"
+        ],
+        "walnut": [
+          "#f0d9b5",
+          "#b58863"
+        ],
+        "slate": [
+          "#dee3e6",
+          "#8ca2ad"
+        ],
+        "ice": [
+          "#e8eef5",
+          "#7d93b2"
+        ]
+      }
+    },
+    "knownDefects": [
+      "Captured pieces in player bars are Unicode chess glyphs with -webkit-text-stroke; replacing them with an SVG piece set awaits the owner's licence decision.",
+      "Close buttons render a text '×', the labels help button a text '?', and info triggers a text 'i' instead of SVG icons.",
+      "The mat ships as #1c3627 (direction contract said #1B3325); the build value is recorded."
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button (Brass)",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one call to action in a region: Retry, Find games, Start Review.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Retry</button>",
+      "css": ".ds-btn { border: 1px solid transparent; border-radius: var(--radius-md, 8px); padding: 9px 16px; font: 700 14px/1.3 Figtree, sans-serif; cursor: pointer; transition: background 160ms, transform 160ms cubic-bezier(.22,1,.36,1); } .ds-btn-primary { background: var(--brass, #d9a441); color: var(--on-brass, #1b1f1a); } .ds-btn-primary:hover { background: var(--brass-hover, #e4b55a); } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: 3px solid var(--green, #2f5d3a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button (Paper)",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Paper-toned action on the panel, e.g. Hide best.",
+      "html": "<button class=\"ds-btn2 ds-btn2-secondary\">Hide best</button>",
+      "css": ".ds-btn2 { border: 1px solid transparent; border-radius: var(--radius-md, 8px); padding: 9px 16px; font: 700 14px/1.3 Figtree, sans-serif; cursor: pointer; transition: background 160ms; } .ds-btn2-secondary { background: var(--paper-2, #e3dbc0); color: var(--ink, #1b1f1a); } .ds-btn2-secondary:hover { background: var(--paper-3, #d6cdad); } .ds-btn2:active { transform: translateY(1px); } .ds-btn2:focus-visible { outline: 3px solid var(--green, #2f5d3a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Outlined, transparent: New game, Next mistake, Summary, Skip tour.",
+      "html": "<button class=\"ds-btn-ghost\">Next mistake</button>",
+      "css": ".ds-btn-ghost { background: transparent; border: 1px solid var(--paper-line-strong, rgba(27,31,26,.3)); color: var(--ink, #1b1f1a); border-radius: var(--radius-md, 8px); padding: 6px 12px; font: 700 13px/1.3 Figtree, sans-serif; cursor: pointer; transition: background 160ms; } .ds-btn-ghost:hover { background: var(--paper-2, #e3dbc0); } .ds-btn-ghost:focus-visible { outline: 3px solid var(--green, #2f5d3a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Segmented Toggle",
+      "kind": "chip",
+      "refersTo": "segmented-option-on",
+      "description": "Chances / Engine and import source tabs; the selected option is club green.",
+      "html": "<div class=\"ds-seg\" role=\"group\"><button class=\"ds-seg-opt\" aria-pressed=\"false\">Chances</button><button class=\"ds-seg-opt ds-on\" aria-pressed=\"true\">Engine</button></div>",
+      "css": ".ds-seg { display: flex; gap: 3px; padding: 3px; border-radius: var(--radius-md, 8px); background: var(--paper-2, #e3dbc0); width: 280px; } .ds-seg-opt { flex: 1; border: 0; background: transparent; color: var(--ink-muted, #5c6152); padding: 6px 10px; border-radius: var(--radius-sm, 6px); font: 700 13px Figtree, sans-serif; cursor: pointer; transition: background 160ms, color 160ms; } .ds-seg-opt:hover:not(.ds-on) { color: var(--ink, #1b1f1a); } .ds-seg-opt.ds-on { background: var(--green, #2f5d3a); color: var(--on-green, #f3eedd); } .ds-seg-opt:focus-visible { outline: 3px solid var(--green, #2f5d3a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Username / PGN entry on paper; green border and soft green ring on focus.",
+      "html": "<input class=\"ds-field\" placeholder=\"Chess.com username\" />",
+      "css": ".ds-field { width: 260px; background: var(--field, #f8f4e6); border: 1px solid var(--paper-line-strong, rgba(27,31,26,.3)); color: var(--ink, #1b1f1a); border-radius: var(--radius-md, 8px); padding: 10px 12px; font: 15px/1.5 Figtree, sans-serif; outline: none; transition: border-color 160ms, box-shadow 160ms; } .ds-field::placeholder { color: var(--ink-muted, #5c6152); } .ds-field:focus { border-color: var(--green, #2f5d3a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green, #2f5d3a) 22%, transparent); }"
+    },
+    {
+      "name": "Nav Controls",
+      "kind": "nav",
+      "refersTo": "nav-control",
+      "description": "First / previous / play / next / last / flip; play is club green.",
+      "html": "<div class=\"ds-controls\"><button aria-label=\"First\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M6 5h2v14H6zM20 5v14L9 12z\" fill=\"currentColor\"/></svg></button><button aria-label=\"Previous\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M15.4 7.4 14 6l-6 6 6 6 1.4-1.4-4.6-4.6z\" fill=\"currentColor\"/></svg></button><button class=\"ds-play\" aria-label=\"Play\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M8 5v14l11-7z\" fill=\"currentColor\"/></svg></button><button aria-label=\"Next\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z\" fill=\"currentColor\"/></svg></button><button aria-label=\"Last\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M16 5h2v14h-2zM4 5v14l11-7z\" fill=\"currentColor\"/></svg></button><button class=\"ds-flip\" aria-label=\"Flip board\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M7 3 3 7h3v10h2V7h3zm10 18 4-4h-3V7h-2v10h-3z\" fill=\"currentColor\"/></svg></button></div>",
+      "css": ".ds-controls { display: flex; gap: 6px; padding: 10px 16px; background: var(--paper, #ede6cf); width: 380px; } .ds-controls button { flex: 1; display: grid; place-items: center; min-height: 42px; border: 0; border-radius: var(--radius-md, 8px); background: var(--paper-2, #e3dbc0); color: var(--ink-2, #3b4035); cursor: pointer; transition: background 160ms; } .ds-controls button:hover { background: var(--paper-3, #d6cdad); color: var(--ink, #1b1f1a); } .ds-controls .ds-play { background: var(--green, #2f5d3a); color: var(--on-green, #f3eedd); } .ds-controls .ds-play:hover { background: var(--green-hover, #386d45); color: var(--on-green, #f3eedd); } .ds-controls .ds-flip { flex: .6; } .ds-controls button:focus-visible { outline: 3px solid var(--green, #2f5d3a); outline-offset: 2px; }"
+    },
+    {
+      "name": "Move List",
+      "kind": "custom",
+      "refersTo": "move-cell-current",
+      "description": "Numbered rows of label icon + SAN, hairline-ruled; the current move is a green pill.",
+      "html": "<div class=\"ds-moves\"><div class=\"ds-row\"><span class=\"ds-num\">4.</span><button class=\"ds-cell\"><span class=\"ds-ico\" style=\"background:#8fa98a\">✓</span>Nc3</button><button class=\"ds-cell\"><span class=\"ds-ico\" style=\"background:#f0b429\">?!</span>Bg4</button></div><div class=\"ds-row\"><span class=\"ds-num\">5.</span><button class=\"ds-cell\"><span class=\"ds-ico\" style=\"background:#ff7970\">??</span>Nxe5</button><button class=\"ds-cell ds-current\"><span class=\"ds-ico\" style=\"background:#ff7970\">??</span>Bxd1</button></div></div>",
+      "css": ".ds-moves { background: var(--paper, #ede6cf); color: var(--ink, #1b1f1a); width: 380px; padding: 6px 0; font: 14px Figtree, sans-serif; } .ds-row { display: grid; grid-template-columns: 40px 1fr 1fr; align-items: center; padding: 1px 12px 1px 16px; } .ds-row + .ds-row { border-top: 1px solid var(--paper-line, rgba(27,31,26,.14)); } .ds-num { color: var(--ink-muted, #5c6152); font-variant-numeric: tabular-nums; } .ds-cell { display: inline-flex; align-items: center; gap: 7px; width: fit-content; min-height: 30px; padding: 3px 9px 3px 6px; border: 0; border-radius: var(--radius-sm, 6px); background: transparent; color: inherit; font: 600 14px Figtree, sans-serif; cursor: pointer; transition: background 160ms, color 160ms; } .ds-cell:hover { background: var(--paper-2, #e3dbc0); } .ds-cell.ds-current { background: var(--green, #2f5d3a); color: var(--on-green, #f3eedd); } .ds-cell:focus-visible { outline: 3px solid var(--green, #2f5d3a); outline-offset: -2px; } .ds-ico { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #10161e; font-size: 9px; font-weight: 900; letter-spacing: -.04em; }"
+    },
+    {
+      "name": "The Mat",
+      "kind": "custom",
+      "refersTo": "mat",
+      "description": "Signature: the green club mat framing the board with printed coordinates and the eval strip (4 files shown).",
+      "html": "<div class=\"ds-mat\"><span class=\"ds-eval\"><span class=\"ds-eval-fill\"></span></span><div class=\"ds-files ds-top\"><span>a</span><span>b</span><span>c</span><span>d</span></div><div class=\"ds-ranks ds-left\"><span>4</span><span>3</span><span>2</span><span>1</span></div><div class=\"ds-board\"></div><div class=\"ds-ranks ds-right\"><span>4</span><span>3</span><span>2</span><span>1</span></div><div class=\"ds-files ds-bottom\"><span>a</span><span>b</span><span>c</span><span>d</span></div></div>",
+      "css": ".ds-mat { display: grid; width: 260px; padding: 8px; border-radius: var(--radius-lg, 12px); background: var(--mat, #1c3627); grid-template-columns: 24px 20px 1fr 20px; grid-template-rows: 20px auto 20px; grid-template-areas: '. . top .' 'side left board right' '. . bottom .'; } .ds-eval { grid-area: side; position: relative; border-radius: 3px; overflow: hidden; background: var(--black-piece, #0e1912); margin-right: 4px; } .ds-eval-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 62%; background: var(--white-piece, #f3eedd); } .ds-files, .ds-ranks { display: grid; color: var(--mat-ink, #d2cbb0); font: 800 13px/1 'Bricolage Grotesque', Figtree, sans-serif; text-align: center; } .ds-files { grid-template-columns: repeat(4, 1fr); align-items: center; } .ds-ranks { grid-template-rows: repeat(4, 1fr); align-items: center; } .ds-top { grid-area: top; } .ds-bottom { grid-area: bottom; } .ds-left { grid-area: left; } .ds-right { grid-area: right; } .ds-board { grid-area: board; aspect-ratio: 1; border-radius: 2px; box-shadow: 0 2px 8px rgba(0,0,0,.35); background: conic-gradient(#4a7a55 25%, #ede6cf 0 50%, #4a7a55 0 75%, #ede6cf 0) 0 0 / 50% 50%; }"
+    },
+    {
+      "name": "Player Bar and Clock",
+      "kind": "custom",
+      "refersTo": "clock-white",
+      "description": "Side disc, name, tabular rating and a clock chip in the player's piece colour.",
+      "html": "<div class=\"ds-pbar\"><span class=\"ds-disc\"></span><span class=\"ds-name\">Alice</span><span class=\"ds-elo\">1500</span><span class=\"ds-clock\">10:00</span></div>",
+      "css": ".ds-pbar { display: flex; align-items: center; gap: 10px; width: 360px; height: 48px; padding: 4px 12px; background: var(--bg, #13221a); color: var(--text, #ede6cf); font: 14px Figtree, sans-serif; } .ds-disc { width: 12px; height: 12px; border-radius: 50%; background: var(--white-piece, #f3eedd); box-shadow: inset 0 0 0 1px rgba(27,31,26,.25); } .ds-name { font-weight: 700; } .ds-elo { color: var(--muted, #9ba48f); font-size: 13px; font-variant-numeric: tabular-nums; } .ds-clock { margin-left: auto; min-width: 76px; padding: 4px 10px; border-radius: var(--radius-sm, 6px); text-align: right; background: var(--white-piece, #f3eedd); color: var(--ink, #1b1f1a); font: 700 16px/1.3 'Bricolage Grotesque', Figtree, sans-serif; font-variant-numeric: tabular-nums; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Club Night",
+    "overview": "The board every club player learned on, grown into the whole app. The page is the deep vinyl green of a roll-up tournament mat; the chessboard sits on a slightly lighter green mat with bold printed a–h / 1–8 coordinates in its margin and the eval strip tucked beside the ranks. Everything you read sits on buff scoresheet paper in dark ink, ruled with hairlines like a score pad. The review is a quiet, tactile evening at the club, not a dashboard.\n\nDensity is moderate and tool-like: the board takes the left of the viewport, a single 400px paper panel holds the coach, graph, move list and controls on the right. Colour is spent sparingly and by meaning. Green marks where you are (current move, active tab, play, toggles, progress); brass marks what you can do (the one primary action in view). The Chess.com move-label colours and glyphs are inherited unchanged because players read them by habit.\n\nThe world explicitly refuses the category default of grey-dark panels with a blue accent and letter avatars. There are no decorative gradients, no glows, and no avatars; a small filled disc in the piece colour stands in for each player.",
+    "keyCharacteristics": [
+      "Vinyl-green ground, darker-green board mat, buff paper panels with ink text.",
+      "Two accent roles only: green for position/state, brass for action.",
+      "Bricolage Grotesque for headings, numerals, coordinates and clocks; Figtree for everything read or clicked.",
+      "Hairline rules (1px, low-alpha ink or cream) separate content; no cards inside cards.",
+      "Flat at rest: shadows only on things that float or lift (popovers, the board, square badges).",
+      "Light and dark appearances share the same green mat and paper; only the ground and paper tint shift."
+    ],
+    "rules": [
+      {
+        "name": "The Green-Is-Here, Brass-Is-Do Rule",
+        "body": "Green only ever marks the current position or an active state; brass only ever marks the primary action. If a control is neither, it is paper (`buff-paper-2`) or ghost.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Brass Rule",
+        "body": "At most one brass button per view region (coach actions, import form, summary footer). Secondary actions are ghost or paper.",
+        "section": "colors"
+      },
+      {
+        "name": "The Fixed Labels Rule",
+        "body": "Move-label colours and glyphs are the Chess.com convention and are never re-themed, re-ordered or recoloured by appearance or board theme.",
+        "section": "colors"
+      },
+      {
+        "name": "The Paper Remap Rule",
+        "body": "Anything placed on a paper surface (panel, settings, info, help, tour card) inherits ink text, paper hairlines, paper hover and a green focus ring by remapping `--text`, `--muted`, `--line`, `--hover` and `--focus` on the surface. Never hand-set ink colours inside paper; join the remap list instead.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Every number that changes as you step through a game (clocks, eval text, accuracy, ratings, label counts, move numbers, dates, progress) is set with tabular figures so columns never jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two Voices Rule",
+        "body": "Bricolage for things that are printed on the club equipment (headings, coordinates, clocks, big numerals); Figtree for everything you read in sentences or press. Don't set body copy or buttons in Bricolage.",
+        "section": "typography"
+      },
+      {
+        "name": "The Section Label Rule",
+        "body": "The uppercase tracked label is the only heading of a data group. It never sits above a display headline or a title as an eyebrow.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mat Is Flat Rule",
+        "body": "The mat and the panel never take a drop shadow. Only the board, floating popovers, the square badge and the phone's pinned controls cast one.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep the board on the mat at the left and the single 400px paper panel at the right; on phones the board comes first in review and the import panel comes first on the start screen.",
+      "**Do** use `club-green` for the current move, the active option, play and checked toggles, and nothing else.",
+      "**Do** spend brass on one primary action per region (Retry, Find games, Start Review).",
+      "**Do** separate panel content with 1px hairlines (`paper-line`) instead of nested cards.",
+      "**Do** set every changing number with tabular figures.",
+      "**Do** put new floating paper surfaces on the paper remap list so they inherit ink text and the green focus ring.",
+      "**Do** keep move-label colours and glyphs exactly as the Chess.com convention defines them.",
+      "**Do** offer the other board themes (Green, Walnut, Slate, Ice) and both appearances as user choices; Club is the default board."
+    ],
+    "donts": [
+      "**Don't** fall back to grey-dark panels with a blue accent, or letter avatars; a side disc in the piece colour identifies each player.",
+      "**Don't** add decorative gradients or glows. The only gradients in the system are functional: the skeleton shimmer and the radial legal-move dots on the board.",
+      "**Don't** give the mat or the panel a drop shadow; shadows belong to the board, popovers, the square badge and the phone's pinned controls.",
+      "**Don't** use brass for selection or \"current\" state, or green for a call to action.",
+      "**Don't** set buttons or body copy in Bricolage Grotesque.",
+      "**Don't** stack an uppercase section label above a headline as an eyebrow."
+    ]
+  }
+}

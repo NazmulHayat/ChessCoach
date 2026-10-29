@@ -39,3 +39,8 @@ ep_model/models_nn*/
 
 # Personal notes (resume drafts, planning), kept out of the repo
 notes/
+
+# Impeccable design scratch (mockups, review captures, question queue)
+.impeccable/mocks/
+.impeccable/review/
+.impeccable/questions/

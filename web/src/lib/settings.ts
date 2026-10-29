@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useState } from 'react'
 
 export type Appearance = 'system' | 'light' | 'dark'
-export type BoardTheme = 'slate' | 'green' | 'walnut' | 'ice'
+export type BoardTheme = 'club' | 'green' | 'walnut' | 'slate' | 'ice'
 
 export const BOARD_THEMES: Record<BoardTheme, { name: string; light: string; dark: string }> = {
-  slate: { name: 'Slate', light: '#dee3e6', dark: '#8ca2ad' },
+  club: { name: 'Club', light: '#ede6cf', dark: '#4a7a55' },
   green: { name: 'Green', light: '#eeeed2', dark: '#769656' },
   walnut: { name: 'Walnut', light: '#f0d9b5', dark: '#b58863' },
+  slate: { name: 'Slate', light: '#dee3e6', dark: '#8ca2ad' },
   ice: { name: 'Ice', light: '#e8eef5', dark: '#7d93b2' },
 }
 
@@ -19,7 +20,7 @@ export interface Settings {
 }
 
 const KEY = 'cc.settings'
-const DEFAULTS: Settings = { theme: 'slate', sounds: true, volume: 70, appearance: 'system' }
+const DEFAULTS: Settings = { theme: 'club', sounds: true, volume: 70, appearance: 'system' }
 
 function load(): Settings {
   try {

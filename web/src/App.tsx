@@ -338,7 +338,7 @@ export default function App() {
       </header>
       <main className={`layout ${stage === 'import' || stage === 'analyzing' ? 'layout-welcome' : ''}`}>
         <section className="left">
-          {stage === 'import' || stage === 'analyzing' ? <Welcome /> : <BoardArea
+          {stage === 'import' || stage === 'analyzing' ? <Welcome colors={BOARD_THEMES[settings.theme]} /> : <BoardArea
             fen={fen}
             orientation={orientation}
             white={whiteP}
@@ -357,9 +357,6 @@ export default function App() {
 
         <aside className="panel">
           <div className="panel-head">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden className="head-icon">
-              <path d="M4 4h16v16H4zM8 16v-4m4 4V8m4 8v-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
             <span className="panel-title">{stage === 'import' ? 'Review a game' : 'Game Review'}</span>
             <HelpMenu kind="labels" />
             {review && stage !== 'import' && (
@@ -421,6 +418,7 @@ export default function App() {
               review={review}
               coach={summaryCoach(review)}
               graphValues={graphValues}
+              axisLabel={mode === 'chances' ? '50%' : '0.0'}
               onStart={() => { setStage('review'); go(Math.max(ply, 1)) }}
               onJump={(p) => { setStage('review'); go(p) }}
             />
@@ -464,7 +462,7 @@ export default function App() {
                 </Coach>
               )}
               <div className="graph-wrap" data-tour="graph">
-                <Graph values={graphValues} moves={review.moves} chances={review.positions.map((p) => p.white_ep)} current={ply} markers={markers} onSelect={go} />
+                <Graph values={graphValues} moves={review.moves} chances={review.positions.map((p) => p.white_ep)} current={ply} markers={markers} onSelect={go} axisLabel={mode === 'chances' ? '50%' : '0.0'} />
               </div>
               <MoveList moves={review.moves} current={ply} onSelect={go} />
               <Controls

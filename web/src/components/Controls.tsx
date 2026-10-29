@@ -24,13 +24,13 @@ export function Controls({ onFirst, onPrev, onNext, onLast, onTogglePlay, onFlip
         <Icon d="M6 5h2v14H6zM20 5v14L9 12z" />
       </button>
       <button type="button" disabled={atStart} onClick={onPrev} aria-label="Previous move" title="Previous (←)">
-        <Icon d="M16 5v14L5 12z" />
+        <Icon d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4-4.6-4.6z" />
       </button>
-      <button type="button" disabled={atEnd || retrying} aria-pressed={playing} onClick={onTogglePlay} aria-label={playing ? 'Pause' : 'Play'} title="Play / pause (Space)">
+      <button type="button" className="ctl-play" disabled={atEnd || retrying} aria-pressed={playing} onClick={onTogglePlay} aria-label={playing ? 'Pause' : 'Play'} title="Play / pause (Space)">
         {playing ? <Icon d="M7 5h4v14H7zM13 5h4v14h-4z" /> : <Icon d="M8 5v14l11-7z" />}
       </button>
       <button type="button" disabled={atEnd} onClick={onNext} aria-label="Next move" title="Next (→)">
-        <Icon d="M8 5v14l11-7z" />
+        <Icon d="M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z" />
       </button>
       <button type="button" disabled={atEnd} onClick={onLast} aria-label="Last move" title="Last (End)">
         <Icon d="M16 5h2v14h-2zM4 5v14l11-7z" />

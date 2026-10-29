@@ -123,3 +123,16 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 - Pipeline packages renamed by what they do: `phase_a` → `sampling`, `phase_b` → `labeling`, `phase_c` → `training`, `phase_d` → `review` (the stages are still called A–D in this log).
 - CI on every push: pytest (with Stockfish), ESLint, Vitest and the production build.
 - Legacy engine wrapper moved into `archive/`, duplicate requirement files merged, project metadata and tool config in `pyproject.toml`.
+
+## Visual redesign: "Club Night" (2026-10-30)
+
+- **Process:** design critique, a product brief (`PRODUCT.md`), five competing directions sketched as HTML and picked by the user, then a code build reviewed by an independent design reviewer over desktop (dark/light) and phone screenshots. Three review rounds; every material finding resolved except one deferred item (below). System recorded in `DESIGN.md`.
+- **Look:** the board sits on a green club "mat" with printed a–h / 1–8 coordinates and the eval bar in its margin; panels are buff scoresheet paper. Green marks where you are (current move, active tab), brass marks what you can do (primary actions). Bricolage Grotesque + Figtree. Chess.com move-label colours and board-left / panel-right layout kept on purpose. New default board theme "Club"; light/dark and the other board themes stay in Settings.
+- **Bugs the review surfaced:** checkmate positions (engine `mate = 0`) were scored for the losing side (eval bar "M0" full black after White mated); now the side to move is the loser and the bar reads 1-0 / 0-1. Play and Next shared one icon. The graph's current-move line used an undefined colour and never drew.
+- **Open:** captured pieces in the player bars are still Unicode glyphs; an SVG piece set needs a licence decision.
+
+### Summary panel rework (2026-10-30)
+- Sections (Accuracy, Moves, Phases, Key moments) now share one left-aligned heading style.
+- Move counts sit in pills sized by count and tinted with the label colour (white grows from the left, black from the right); zeros show "–"; a stronger rule separates good moves from errors; "Show all / Hide empty" is a quiet text link in the heading and only appears when some labels are empty.
+- Phase grades show the phase accuracy next to the grade icon instead of hiding it behind a tap.
+- Key moments align with the panel gutter, show who played the move, and draw a small chances track: kept chances in ink, the part the move gave away in its label colour.
