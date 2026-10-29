@@ -21,6 +21,7 @@ Held-out test: **31,961 positions from 6,403 games** that no model saw, labelled
 | **EP model, fine-tuned** | 12M harvested Lichess positions, then 154k Stockfish positions | **0.575** | **0.189** |
 | EP model, Stockfish data only | 181k Stockfish positions | 0.579 | 0.190 |
 | EP model, harvested data only | 12M harvested Lichess positions | 0.581 | 0.192 |
+| EP neural network (PyTorch MLP), best of 3 seeds | 181k Stockfish positions | 0.575 | 0.189 |
 | Eval-only LightGBM (same model, no context) | 181k | 0.627 | 0.210 |
 | Lichess win% formula | none | 0.649 | 0.215 |
 | Constant | none | 0.693 | 0.240 |
@@ -29,6 +30,7 @@ Held-out test: **31,961 positions from 6,403 games** that no model saw, labelled
 - **Bullet**: 0.586 vs 0.705 for the Lichess curve (−17%), where time pressure matters most.
 - **Pretrain + fine-tune is significantly better** than training on the clean data alone: −0.0043 log loss, 95% CI −0.0065 to −0.0021 (paired bootstrap over games).
 - **Calibrated**: in every 10-point bin, the actual score is within 1.5 points of the prediction.
+- **PyTorch comparison**: an MLP on the same features and clean data beats LightGBM on that data in all 3 seeds (0.5745–0.5766 vs 0.5788; significant in 2) and ties the pretrained + fine-tuned model with no harvested data (no significant difference). Not shipped, since it doesn't beat the current model ([details](docs/methodology.md#data)).
 
 **Are the labels right?** A fixed benchmark scores every change against targets, per time class ([results](docs/benchmark.md), [how](docs/methodology.md#benchmark)): 150 recent Lichess games with Lichess's verdicts, 300 Chess.com games with Chess.com's accuracy, 300 puzzles and 64 known cases. Moves are judged by a board-only model (no clock), after a user's bullet game showed the clock-aware model calling a queen giveaway "good": 100% of our blunders are also Lichess errors, our error counts match Lichess's within 2%, and all 64 known cases pass. Earlier checks, also against references we didn't produce ([details](docs/methodology.md#validation-against-independent-references)):
 
@@ -138,7 +140,7 @@ Pipeline details: [`ep_model/README.md`](ep_model/README.md). Design decisions a
 | `ep_model/phase_a/` | Stream the dump, sample positions, extract ratings / clocks / result |
 | `ep_model/phase_b/` | Stockfish evals with FEN cache, checkpoints and parallel workers |
 | `ep_model/harvest/` | Extract positions with Lichess server evals straight from the dump |
-| `ep_model/phase_c/` | Feature prep, LightGBM training, fine-tuning, baseline evaluation with bootstrap CIs |
+| `ep_model/phase_c/` | Feature prep, LightGBM training, fine-tuning, PyTorch comparison model, baseline evaluation with bootstrap CIs |
 | `ep_model/phase_d/` | `EPModel` predictor, move review, engine pool, FastAPI server |
 | `ep_model/scripts/` | `safe_run` (long Phase B runs with health checks, retries), full pipeline script |
 | `web/` | React + Vite + TypeScript frontend |

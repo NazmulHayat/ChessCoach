@@ -15,5 +15,8 @@ fastapi>=0.115
 uvicorn>=0.30
 httpx>=0.27
 
+# Optional: PyTorch comparison model (ep_model.phase_c.train_nn; not used by the app)
+# torch>=2.4
+
 # Optional: Claude-written explanations for key moments (only used when ANTHROPIC_API_KEY is set)
 anthropic>=2.0

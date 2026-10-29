@@ -27,6 +27,14 @@ The harvested set is huge and free, but it differs from the clean set in two way
 
 **More pretraining data.** Pretraining on 25M harvested rows instead of 12M (then the same fine-tune) reached 0.5743 vs 0.5746 log loss on the test set: a paired difference of −0.0002 (95% CI −0.0011 to +0.0007). Not significant, so the 12M model stays.
 
+**Neural network (PyTorch).** `python -m ep_model.phase_c.train_nn` trains an MLP on the same 17 features, the same clock dropout and the same clean training games, with the test games excluded (embeddings for phase / time class / rating band / ECO, standardised numerics with missing-clock flags, 3 × 128 ReLU layers, binary cross-entropy on the soft result, early-stopped on 10% of training games; 42k parameters, about 10 s per run on a laptop CPU). `phase_c.evaluate --extra-nn` scores it on the same held-out rows. Over three seeds it reached 0.5745 / 0.5760 / 0.5766 log loss:
+
+- **vs LightGBM on the same clean data** (0.5788): better in all three seeds, −0.0043 / −0.0028 / −0.0023, significant in two of three (95% CIs −0.0068 to −0.0021, −0.0054 to −0.0003, −0.0047 to +0.0001).
+- **vs the shipped pretrained + fine-tuned LightGBM** (0.5746): no significant difference in any seed (best −0.0001, 95% CI −0.0026 to +0.0023). The network matches what LightGBM needed 12M extra harvested positions to reach.
+- Calibration is slightly looser: every bin within 2.5 points, against 1.5 for LightGBM.
+
+Not shipped: it does not beat the current model, and the browser app evaluates LightGBM trees exported to JSON. Pretraining the network on the harvested set is the obvious next experiment. (LightGBM and PyTorch each bundle an OpenMP runtime that aborts the process on macOS when both are loaded, so the evaluator and the tests run the network in a separate process.)
+
 ## Training choices
 
 | Decision | Why |

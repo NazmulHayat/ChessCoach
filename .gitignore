@@ -35,3 +35,4 @@ ep_model/benchmark/results/
 ep_model/models_board_rapid_lichess/
 ep_model/models_board_all/
 ep_model/models_board_slow/
+ep_model/models_nn*/

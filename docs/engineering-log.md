@@ -35,6 +35,7 @@ What was built, the numbers behind it, and the problems solved along the way. Ne
 | Bullet games | 0.586 vs 0.705 for the Lichess curve (−17%) |
 | Calibration | every 10-point bin within 1.5 points |
 | Training run | 12M rows, 734 trees, 252 s on a laptop; 25M rows, 1,353 trees, 978 s, 4.9 GB peak RAM |
+| PyTorch MLP vs LightGBM (same 181k clean rows) | 0.5745 / 0.5760 / 0.5766 over 3 seeds vs 0.5788; vs shipped fine-tuned model 0.5746: no significant difference (best −0.0001, 95% CI −0.0026 to +0.0023); 42k parameters, ~10 s per run; not shipped |
 | 25M vs 12M pretraining (both fine-tuned) | 0.5743 vs 0.5746 log loss; paired difference −0.0002, 95% CI −0.0011 to +0.0007: no significant gain, 12M model kept |
 | App latency | full 62-move game at depth 17: 8.1 s with 4 engines and one line per position; 23.8 s after switching to two lines (multipv=2, needed for Great / Brilliant); 0.07 s on a repeat (FEN cache) |
 | Game rating (performance) | your rating + k·(plays-like − rating), fitted on 397k Lichess player-games; held out, blitz: players rated 50+ above their rating in that game scored 63.5% vs 37.9% for 50+ below (48.8% in between) |

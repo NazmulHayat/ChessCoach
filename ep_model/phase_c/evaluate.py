@@ -8,7 +8,9 @@ Baselines:
   - eval_lgbm:       LightGBM on cp_stm_proxy only (same model class, no rating / clock context)
 
 --extra-model NAME=DIR adds other trained EP models (e.g. one trained on harvested Lichess evals)
-to the same comparison on the same held-out games.
+to the same comparison on the same held-out games. --extra-nn NAME=DIR does the same for a PyTorch
+model from phase_c.train_nn, scored in a separate process (LightGBM and torch each bundle an OpenMP
+runtime, and on macOS the two abort when loaded together).
 
 Usage (repo root, after phase_c.train):
   python -m ep_model.phase_c.evaluate -v
@@ -19,7 +21,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import lightgbm as lgb
@@ -195,8 +199,23 @@ def render_markdown(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def predict_nn_subprocess(model_dir: Path, features: pd.DataFrame) -> np.ndarray:
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "features.parquet", Path(tmp) / "pred.npy"
+        features.reset_index(drop=True).to_parquet(src)
+        cmd = [sys.executable, "-m", "ep_model.phase_c.train_nn", "predict", str(model_dir), str(src), str(dst)]
+        subprocess.run(cmd, check=True, cwd=_repo_root())
+        return np.load(dst)
+
+
 def run(
-    processed: Path, models: Path, seed: int, extra_models: dict[str, Path] | None = None, reference: str | None = None
+    processed: Path,
+    models: Path,
+    seed: int,
+    extra_models: dict[str, Path] | None = None,
+    reference: str | None = None,
+    extra_nn: dict[str, Path] | None = None,
+    out_dir: Path | None = None,
 ) -> int:
     """reference: also bootstrap every EP model against this one (e.g. the model currently shipped)."""
     model_path = models / "ep_lgbm.txt"
@@ -224,6 +243,8 @@ def run(
     preds: dict[str, np.ndarray] = {"ep_model": booster.predict(val[feature_names])}
     for name, mdir in (extra_models or {}).items():
         preds[name] = lgb.Booster(model_file=str(mdir / "ep_lgbm.txt")).predict(val[feature_names])
+    for name, mdir in (extra_nn or {}).items():
+        preds[name] = predict_nn_subprocess(mdir, val[feature_names])
 
     a, b = fit_logistic_1d(cp_tr / 100.0, y_tr)
     LOG.info("eval_logistic: p = sigmoid(%.4f + %.6f * cp)", a, b / 100.0)
@@ -246,7 +267,9 @@ def run(
         "by_rating_band": _metrics_by(y, preds, val["rating_band"]),
         "by_time_class": _metrics_by(y, preds, val["time_class"]),
         "eval_slice": eval_slice_table(val, y, preds),
-        "calibration": {n: calibration_table(y, preds[n]) for n in ("ep_model", *(extra_models or {}), "lichess_formula")},
+        "calibration": {
+            n: calibration_table(y, preds[n]) for n in ("ep_model", *(extra_models or {}), *(extra_nn or {}), "lichess_formula")
+        },
         "paired_vs_ep_model": {
             n: paired_bootstrap(y, preds[n], preds["ep_model"], val["game_id"]) for n in preds if n != "ep_model"
         },
@@ -272,9 +295,11 @@ def run(
     for n, b in report["paired_vs_ep_model"].items():
         LOG.info("%-16s vs ep_model: %+.4f (95%% CI %+.4f to %+.4f)", n, b["diff"], b["ci_low"], b["ci_high"])
 
-    (models / "ep_eval_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-    (models / "ep_eval_report.md").write_text(render_markdown(report), encoding="utf-8")
-    LOG.info("Wrote %s and %s", models / "ep_eval_report.json", models / "ep_eval_report.md")
+    out = out_dir or models
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "ep_eval_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (out / "ep_eval_report.md").write_text(render_markdown(report), encoding="utf-8")
+    LOG.info("Wrote %s and %s", out / "ep_eval_report.json", out / "ep_eval_report.md")
     return 0
 
 
@@ -285,15 +310,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--models-dir", type=Path, default=root / "ep_model" / "models")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--extra-model", action="append", default=[], metavar="NAME=DIR", help="Also score this trained model")
+    p.add_argument("--extra-nn", action="append", default=[], metavar="NAME=DIR", help="Also score this PyTorch model")
     p.add_argument("--reference", default=None, help="Also compare every EP model to this one (paired bootstrap)")
+    p.add_argument("--out-dir", type=Path, default=None, help="Write the report here instead of --models-dir")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
-    extra = {}
-    for spec in args.extra_model:
-        name, _, d = spec.partition("=")
-        extra[name] = Path(d)
+    def specs(items: list[str]) -> dict[str, Path]:
+        return {name: Path(d) for name, _, d in (s.partition("=") for s in items)}
+
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(message)s")
-    return run(args.processed_dir, args.models_dir, args.seed, extra, args.reference)
+    return run(
+        args.processed_dir, args.models_dir, args.seed, specs(args.extra_model), args.reference, specs(args.extra_nn), args.out_dir
+    )
 
 
 if __name__ == "__main__":
